@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.050 (Cache Fix for Streamlit Cloud)
-【修复更新】
-1. 引入 Streamlit 缓存机制 (@st.cache_data)，彻底解决 Yahoo Finance 限流报错 (Too Many Requests)。
-2. 数据缓存有效期设为 1 小时 (ttl=3600)，既保证速度又避免频繁请求。
+美股崩盘预警系统 - 21因子 V10.051 (Secure Secrets Edition)
+【安全与修复更新】
+1. 安全升级：移除所有硬编码 API Key，改为从 Streamlit Secrets 读取。
+   (GENAI_API_KEY, FRED_KEY, FIRECRAWL_KEY 均需在后台配置)
+2. 缓存优化：保留 @st.cache_data 机制，防止 Yahoo Finance 限流。
 """
-import streamlit as st  # <--- [新增] 引入 streamlit 用于缓存
+import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -43,13 +44,23 @@ except ImportError:
     sys.exit(1)
 
 # ==========================================
-# 【API 配置区】
+# 【API 配置区 - 安全版】
 # ==========================================
-GENAI_API_KEY = "AIzaSyBSnXTC9i65NXXOxcz5X8P5QYKverog8NU" 
-client = genai.Client(api_key=GENAI_API_KEY)
+# 自动从 Streamlit Secrets 读取 Key，防止上传 GitHub 后被封
+# 请确保在 Streamlit Cloud -> App Settings -> Secrets 中配置了以下三个变量
+try:
+    GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
+    USER_FRED_KEY = st.secrets["FRED_KEY"]
+    FIRECRAWL_KEY = st.secrets["FIRECRAWL_KEY"]
+except FileNotFoundError:
+    st.error("❌ 错误：未检测到 Secrets 配置！请在 Streamlit Cloud 后台 Settings -> Secrets 中填入 API Key。")
+    st.stop()
+except KeyError as k:
+    st.error(f"❌ 错误：Secrets 中缺少键值 {k}。请检查配置文件名拼写是否正确。")
+    st.stop()
 
-# 用户提供的 FRED Key
-USER_FRED_KEY = "1415a3f3fb1ffc77192884dfca96006c"
+# 初始化 Google AI
+client = genai.Client(api_key=GENAI_API_KEY)
 
 warnings.filterwarnings("ignore")
 
@@ -77,8 +88,6 @@ def print_info(msg): print(f"{C.BLUE}\u2139\ufe0f  {msg}{C.ENDC}")
 # ==========================================
 # 【缓存加速层 (解决 Yahoo 限流问题)】
 # ==========================================
-# 将原本类中的下载逻辑提取为独立函数，并添加 st.cache_data 装饰器
-
 @st.cache_data(ttl=86400) # 列表缓存 24 小时
 def get_cached_tickers():
     """缓存获取标普500成分股名单"""
@@ -99,7 +108,6 @@ def get_cached_sp500_data(tickers):
     print_info("提示: 首次运行需联网下载，后续 1 小时内将直接读取缓存...")
     
     closes = []
-    # 分批下载逻辑保持不变
     for i in range(0, len(tickers), 80):
         batch = tickers[i:i+80]
         try:
@@ -136,7 +144,8 @@ def get_cached_smt_data(tickers, period):
 class WebScraper:
     def __init__(self):
         self.session = requests.Session()
-        self.firecrawl_key = "fc-f9c7fb180bba456c810fb944f2100ea1"
+        # [安全修复] 直接使用从 secrets 读取到的变量，不再硬编码
+        self.firecrawl_key = FIRECRAWL_KEY 
         self.app = Firecrawl(api_key=self.firecrawl_key)
         self.fred_key = USER_FRED_KEY
         self.cached_gdp = None 
@@ -318,7 +327,6 @@ class WebScraper:
                         contents=[prompt, img_data]
                     )
                     
-                    # [Fix] 增加防呆检查，防止 'NoneType' crash
                     if ai_resp and ai_resp.text:
                         json_match = re.search(r'\{.*\}', ai_resp.text, re.DOTALL)
                         if json_match:
@@ -1760,9 +1768,12 @@ if __name__ == "__main__":
         app.generate_chart()
         
         # 2. 附加功能模块
-        user_fred_key = "1415a3f3fb1ffc77192884dfca96006c"
-        run_fred_traffic_light(user_fred_key)
-        run_fred_v10_dashboard(user_fred_key)
+        # [安全修复] 下面这行也改为从 secrets 读取
+        try:
+            run_fred_traffic_light(USER_FRED_KEY)
+            run_fred_v10_dashboard(USER_FRED_KEY)
+        except NameError:
+            print("FRED Key 未配置，跳过附加模块。")
         
         # 3. 趋势分析 (深度宏观)
         app.analyze_market_trends_console()
