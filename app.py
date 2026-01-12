@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.049 (Bull Market Support Band Fix)
-【逻辑修复】牛市支撑带：
-           1. 升级为双线系统：20周简单均线 (SMA) + 21周指数均线 (EMA)。
-           2. 只有当价格跌破整个支撑带（即低于两者中的低点）时才触发报警。
-           3. 避免了仅跌破20SMA但在21EMA获支撑的“假摔”误报。
+美股崩盘预警系统 - 21因子 V10.050 (Cache Fix for Streamlit Cloud)
+【修复更新】
+1. 引入 Streamlit 缓存机制 (@st.cache_data)，彻底解决 Yahoo Finance 限流报错 (Too Many Requests)。
+2. 数据缓存有效期设为 1 小时 (ttl=3600)，既保证速度又避免频繁请求。
 """
+import streamlit as st  # <--- [新增] 引入 streamlit 用于缓存
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -72,6 +72,63 @@ def print_ok(msg): print(f"{C.GREEN}\u2705 {msg}{C.ENDC}")
 def print_warn(msg): print(f"{C.YELLOW}\u26a0\ufe0f  {msg}{C.ENDC}")
 def print_err(msg): print(f"{C.RED}\u274c {msg}{C.ENDC}")
 def print_info(msg): print(f"{C.BLUE}\u2139\ufe0f  {msg}{C.ENDC}")
+
+
+# ==========================================
+# 【缓存加速层 (解决 Yahoo 限流问题)】
+# ==========================================
+# 将原本类中的下载逻辑提取为独立函数，并添加 st.cache_data 装饰器
+
+@st.cache_data(ttl=86400) # 列表缓存 24 小时
+def get_cached_tickers():
+    """缓存获取标普500成分股名单"""
+    print_step("获取标普500成分股名单 (Cached)...")
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        tables = pd.read_html(requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text)
+        for t in tables:
+            if 'Symbol' in t.columns:
+                return t['Symbol'].str.replace('.', '-', regex=False).tolist()
+    except: return []
+
+@st.cache_data(ttl=3600) # 数据缓存 1 小时
+def get_cached_sp500_data(tickers):
+    """缓存下载 500 只股票数据"""
+    if not tickers: return pd.DataFrame()
+    print_step(f"下载 {len(tickers)} 只成分股数据 (5年) [Cached]...")
+    print_info("提示: 首次运行需联网下载，后续 1 小时内将直接读取缓存...")
+    
+    closes = []
+    # 分批下载逻辑保持不变
+    for i in range(0, len(tickers), 80):
+        batch = tickers[i:i+80]
+        try:
+            data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=True, timeout=30)
+            if isinstance(data.columns, pd.MultiIndex):
+                try: close = data['Close']
+                except: close = data
+            else: close = data
+            closes.append(close)
+            print(f"   进度: {min(i+80, len(tickers))}/{len(tickers)}")
+        except: pass
+        
+    if not closes: return pd.DataFrame()
+    return pd.concat(closes, axis=1).dropna(axis=1, how='all')
+
+@st.cache_data(ttl=3600) # 数据缓存 1 小时
+def get_cached_sector_data(tickers, start_date):
+    """缓存下载板块轮动数据"""
+    print_step(f"下载 {len(tickers)} 个板块数据 ({start_date} ~ Now) [Cached]...")
+    raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False)
+    return raw_data
+
+@st.cache_data(ttl=3600) # 数据缓存 1 小时
+def get_cached_smt_data(tickers, period):
+    """缓存下载 SMT 分析数据"""
+    print_step("下载全量数据 (含期货/等权ETF) [Cached]...")
+    data = yf.download(tickers, period=period, auto_adjust=False, progress=False)
+    return data
+
 
 # ==========================================
 # 【WebScraper: 纯净 Firecrawl 版】
@@ -523,34 +580,14 @@ class CrashWarningSystem:
         plt.rcParams['axes.unicode_minus'] = False
 
     def get_tickers(self):
-        print_step("获取标普500成分股名单...")
-        try:
-            url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-            tables = pd.read_html(requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text)
-            for t in tables:
-                if 'Symbol' in t.columns:
-                    return t['Symbol'].str.replace('.', '-', regex=False).tolist()
-        except: return [] 
+        # [Fix] 使用缓存
+        return get_cached_tickers()
 
     def download_5y_data(self):
+        # [Fix] 使用缓存的全局函数
         tickers = self.get_tickers()
         if not tickers: return pd.DataFrame()
-        print_step(f"下载 {len(tickers)} 只成分股数据 (5年)...")
-        print_info("保持网络通畅，数据量较大...")
-        closes = []
-        for i in range(0, len(tickers), 80):
-            batch = tickers[i:i+80]
-            try:
-                data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=True, timeout=30)
-                if isinstance(data.columns, pd.MultiIndex):
-                    try: close = data['Close']
-                    except: close = data
-                else: close = data
-                closes.append(close)
-                print(f"   进度: {min(i+80, len(tickers))}/{len(tickers)}")
-            except: pass
-        if not closes: return pd.DataFrame()
-        return pd.concat(closes, axis=1).dropna(axis=1, how='all')
+        return get_cached_sp500_data(tickers)
 
     def calculate_spx_breadth_deep(self):
         try:
@@ -1191,35 +1228,11 @@ class SectorRotationEngine:
         try:
             tickers = list(self.sectors.keys())
             start_date = (datetime.now() - timedelta(days=300)).strftime('%Y-%m-%d')
-            print_step(f"下载 11 个板块数据 ({start_date} ~ Now)...")
+            # [Fix] 使用缓存下载
+            data = self._get_data_with_cache(tickers, start_date)
             
-            raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False)
-            
-            if raw_data.empty:
-                print_err("数据下载失败，跳过板块轮动分析。")
-                return None
-
-            data = None
-            if isinstance(raw_data.columns, pd.MultiIndex):
-                try:
-                    data = raw_data['Adj Close']
-                except KeyError:
-                    try:
-                        data = raw_data['Close']
-                        print_info("提示: 使用 'Close' 列代替 'Adj Close'")
-                    except KeyError:
-                        print_err("未能在下载数据中找到价格列")
-                        return None
-            else:
-                if 'Adj Close' in raw_data:
-                    data = raw_data['Adj Close']
-                elif 'Close' in raw_data:
-                    data = raw_data['Close']
-                else:
-                    data = raw_data
-
             if data is None or data.empty:
-                print_err("有效价格数据为空")
+                print_err("数据下载失败，跳过板块轮动分析。")
                 return None
 
             results = self._calculate_rrg(data)
@@ -1233,6 +1246,32 @@ class SectorRotationEngine:
         except Exception as e:
             print_err(f"板块轮动分析异常: {e}")
             return None
+
+    def _get_data_with_cache(self, tickers, start_date):
+        # [Fix] 调用全局缓存函数
+        raw_data = get_cached_sector_data(tickers, start_date)
+        
+        if raw_data.empty: return None
+
+        data = None
+        if isinstance(raw_data.columns, pd.MultiIndex):
+            try:
+                data = raw_data['Adj Close']
+            except KeyError:
+                try:
+                    data = raw_data['Close']
+                    print_info("提示: 使用 'Close' 列代替 'Adj Close'")
+                except KeyError:
+                    print_err("未能在下载数据中找到价格列")
+                    return None
+        else:
+            if 'Adj Close' in raw_data:
+                data = raw_data['Adj Close']
+            elif 'Close' in raw_data:
+                data = raw_data['Close']
+            else:
+                data = raw_data
+        return data
 
     def _calculate_10d_movers(self, data):
         if 'SPY' not in data.columns: return []
@@ -1469,53 +1508,53 @@ class SMTDivergenceAnalyzer:
         print(f" \U0001f9ed 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
         print("="*75)
 
-        # 1. 批量下载数据
-        print_step("下载全量数据 (含期货/等权ETF)...")
-        try:
-            data = yf.download(self.all_tickers, period="6mo", auto_adjust=False, progress=False)
-            
-            if isinstance(data.columns, pd.MultiIndex):
-                try: df_close = data['Close']
-                except KeyError: df_close = data 
-            else:
-                df_close = data
-            
-            df_close = df_close.ffill().dropna() 
-            
-            if df_close.empty:
-                print_err("SMT 数据下载为空，跳过分析。")
-                return
+        # [Fix] 使用缓存下载
+        df_close = self._get_data_with_cache()
+        if df_close is None: return
 
-            print_ok("数据获取成功，开始计算...")
-            print("-" * 75)
+        print_ok("数据获取成功，开始计算...")
+        print("-" * 75)
 
-            # 2. 经典 SMT (恢复老版样式)
-            print_h("1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
-            for period in self.periods:
-                self._analyze_classic_style(df_close, period)
-            
-            print("-" * 75)
-            
-            # 3. Pro SMT (增强信息量)
-            print_h("2. 进阶 SMT 分析 (期货 & 市场广度)")
-            print_info("💡 期货(NQ/ES)包含夜盘，反应更真实；SPY/RSP揭示只有巨头在涨还是普涨。")
-            self._analyze_pro_futures(df_close, 10) # 10日是期货背离黄金窗口
-            self._analyze_pro_breadth(df_close, 20) # 20日看广度最准
-            
-            print("-" * 75)
+        # 2. 经典 SMT (恢复老版样式)
+        print_h("1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
+        for period in self.periods:
+            self._analyze_classic_style(df_close, period)
+        
+        print("-" * 75)
+        
+        # 3. Pro SMT (增强信息量)
+        print_h("2. 进阶 SMT 分析 (期货 & 市场广度)")
+        print_info("💡 期货(NQ/ES)包含夜盘，反应更真实；SPY/RSP揭示只有巨头在涨还是普涨。")
+        self._analyze_pro_futures(df_close, 10) # 10日是期货背离黄金窗口
+        self._analyze_pro_breadth(df_close, 20) # 20日看广度最准
+        
+        print("-" * 75)
 
-            # 4. 关键位与入场
-            self._analyze_entry_signals(df_close)
+        # 4. 关键位与入场
+        self._analyze_entry_signals(df_close)
 
-            # 5. 市场总评
-            self._summarize_market()
+        # 5. 市场总评
+        self._summarize_market()
 
-            # 6. 图例
-            self._print_legend()
-
-        except Exception as e:
-            print_err(f"SMT 分析异常: {e}")
-            traceback.print_exc()
+        # 6. 图例
+        self._print_legend()
+    
+    def _get_data_with_cache(self):
+         # [Fix] 调用全局缓存函数
+        data = get_cached_smt_data(self.all_tickers, "6mo")
+        
+        if isinstance(data.columns, pd.MultiIndex):
+            try: df_close = data['Close']
+            except KeyError: df_close = data 
+        else:
+            df_close = data
+        
+        df_close = df_close.ffill().dropna() 
+        
+        if df_close.empty:
+            print_err("SMT 数据下载为空，跳过分析。")
+            return None
+        return df_close
 
     # --- 风格1：经典老版样式 (你喜欢的) ---
     def _analyze_classic_style(self, df, period):
