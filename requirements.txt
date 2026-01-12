@@ -1,0 +1,13 @@
+streamlit
+pandas
+numpy
+yfinance
+matplotlib
+requests
+beautifulsoup4
+firecrawl-py
+google-genai
+fredapi
+pillow
+lxml
+html5lib
