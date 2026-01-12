@@ -4,3 +4,10 @@ numpy
 yfinance>=0.2.40
 matplotlib
 requests
+beautifulsoup4
+firecrawl-py
+google-genai
+fredapi
+pillow
+lxml
+html5lib
