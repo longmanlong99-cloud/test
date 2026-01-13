@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.097 (Final Fix)
+美股崩盘预警系统 - 21因子 V10.098 (LEI Fix)
 【修复说明】
-1. 继承 V10.096 的 URL 修复 (无需担心 SyntaxError)。
-2. [关键修复] NASDAQ 数据不再使用 "模拟倍数"，改为从 WSJ 截图直接提取真值。
-3. 优化 Prompt，同时读取 NYSE (用于 Hindenburg) 和 NASDAQ (用于广度) 数据。
+1. 继承 V10.097 的所有修复 (WSJ URL + NASDAQ 真值)。
+2. [关键修复] LEI 指标抓取逻辑升级：从 "抓取内部图片URL" 改为 "网页全屏截图"。
+   解决官网开启防盗链导致图片下载失败的问题。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -150,38 +150,59 @@ class WebScraper:
         except: pass
         return None
 
+    # --- [LEI FIXED: Full Page Screenshot Mode] ---
     def fetch_lei(self):
-        p_section("[LEI 3Ds] 启动混合视觉模式 (Firecrawl + Gemini)...")
+        p_section("[LEI 3Ds] 启动混合视觉模式 (Firecrawl Full Page)...")
         if not (self.app and GENAI_API_KEY): return None, None
+        
         try:
-            p_log("正在解析页面结构 (寻找 Summary Table 图片)...")
-            r = self.app.scrape("https://www.conference-board.org/topics/us-leading-indicators", formats=['markdown'])
-            md = getattr(r, 'markdown', '')
-            img_url = None
-            if md:
-                anchor = md.find("Summary Table")
-                if anchor != -1:
-                    match = re.search(r'\((https://.*?lei.*?\.png)\)', md[anchor:anchor+1500], re.I)
-                    if match: img_url = match.group(1)
-                if not img_url:
-                    match = re.search(r'\((https://.*?lei.*?\.png)\)', md, re.I)
-                    if match: img_url = match.group(1)
+            p_log("请求网页全屏截图 (绕过防盗链)...")
             
-            if img_url:
-                p_ok(f"定位到数据图片: {img_url.split('/')[-1]}")
-                p_log("下载图片并进行 AI 分析...")
-                img_data = Image.open(io.BytesIO(requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}).content))
-                prompt = 'Extract "6-Month % Change" (depth) and "Diffusion" (diffusion) as JSON.'
-                resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, img_data])
-                js = json.loads(re.search(r'\{.*\}', resp.text.replace('```json',''), re.DOTALL).group(0))
-                d, df = float(js['depth']), float(js['diffusion'])
-                p_ok(f"Gemini 视觉读取成功: Depth={d}%, Diffusion={df}")
-                return d, df
-        except:
-            try:
-                match = re.search(r'Leading Economic Index.*?decreased by\s*(\d+\.\d+)\s*percent', md, re.I | re.S)
-                if match: return -float(match.group(1)), 50.0
-            except: pass
+            # [关键修复] 不再抓取内部小图，改为抓取网页全屏截图
+            # 这样 Firecrawl 模拟浏览器直接看到表格，不会被图片防盗链拦截
+            params = {
+                "url": "https://www.conference-board.org/topics/us-leading-indicators",
+                "formats": ["screenshot"], 
+                "waitFor": 5000 
+            }
+            
+            headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=params, timeout=60)
+            
+            if r.status_code == 200:
+                data = r.json()
+                scr = data.get('data', {}).get('screenshot', '')
+                
+                if scr:
+                    p_log("✅ 网页截图获取成功，正在 AI 识别数据...")
+                    # 下载 Firecrawl 返回的公开截图
+                    img_data = Image.open(io.BytesIO(requests.get(scr).content))
+                    
+                    # 针对全屏截图的 Prompt
+                    prompt = """
+                    Look at the "Summary Table" in this report.
+                    Extract:
+                    1. "6-Month % Change" for 'Leading Economic Index' (Depth).
+                    2. "Diffusion" for 'Leading Economic Index' (Diffusion).
+                    Return JSON ONLY: {"depth": -2.4, "diffusion": 50.0}
+                    """
+                    
+                    resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, img_data])
+                    
+                    # 清洗数据
+                    txt = resp.text.replace('```json', '').replace('```', '').strip()
+                    js = json.loads(re.search(r'\{.*\}', txt, re.DOTALL).group(0))
+                    
+                    d, df = float(js['depth']), float(js['diffusion'])
+                    p_ok(f"Gemini 视觉读取成功: Depth={d}%, Diffusion={df}")
+                    return d, df
+            else:
+                p_err(f"Firecrawl 请求失败: {r.status_code}")
+
+        except Exception as e:
+            p_err(f"LEI 视觉分析中断: {e}")
+            pass
+            
         return None, None
 
     # --- [WSJ FINAL FIXED & ENHANCED] ---
@@ -251,7 +272,7 @@ class WebScraper:
         p_section("[Margin Debt] 启动 Firecrawl 抓取 (FINRA)...")
         if not self.app: return None, None
         try:
-            r = self.app.scrape("https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics", formats=['markdown'])
+            r = self.app.scrape("[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)", formats=['markdown'])
             md = getattr(r, 'markdown', '')
             matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md)
             if matches:
@@ -281,8 +302,8 @@ class WebScraper:
         p_log("请求云端截图...")
         if not (self.app and GENAI_API_KEY): return None
         try:
-            target_nymo_url = "https://stockcharts.com/h-sc/ui?s=$NYMO"
-            api_endpoint = "https://api.firecrawl.dev/v1/scrape"
+            target_nymo_url = "[https://stockcharts.com/h-sc/ui?s=$NYMO](https://stockcharts.com/h-sc/ui?s=$NYMO)"
+            api_endpoint = "[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)"
             
             headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
             payload = {"url": target_nymo_url, "formats": ["screenshot"], "waitFor": 8000}
@@ -588,7 +609,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.097 (Final Fix)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.098 (Final Fix)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -778,7 +799,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.097 Final Fix)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.098 Final Fix)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
