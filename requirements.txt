@@ -8,3 +8,5 @@ fredapi
 firecrawl-py
 google-genai
 Pillow
+fear-and-greed
+
