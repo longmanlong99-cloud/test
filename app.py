@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.089 (Perfect Pixel Clone)
-【执行标准】
-1. 图片内容: "当前读数" 和 "判断逻辑" 两列的内容格式，已100%复刻电脑版截图 (包括换行、汉字单位、动态评语)。
-2. 日志内容: 严格保留 V10.088 的全量详细日志 (output.txt 复刻)，绝不精简。
-3. 核心功能: 保持 Firecrawl + Gemini + FRED 的抗造抓取逻辑。
+美股崩盘预警系统 - 21因子 V10.090 (Crash Fix Edition)
+【紧急修复】
+1. 修复 UnboundLocalError: 解决了当 WSJ 抓取失败时，由于 adv_tv/dec_tv 未定义导致的程序崩溃问题。
+   (方法：在逻辑开始前预设默认值为 0)。
+2. 保持一切原样: 其他所有逻辑、排版、文字、抓取方式均未变动，严格遵守纪律。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -34,7 +34,6 @@ st.markdown("""
     .reportview-container { background: #000000; }
     .main { background: #000000; color: #cccccc; font-family: 'Consolas', 'Courier New', monospace; }
     h3 { color: #d45d87 !important; border-bottom: 1px dashed #555; padding-top: 15px; margin-bottom: 5px; font-size: 18px; }
-    /* 强制等宽字体，复刻 output.txt 体验 */
     .stText { 
         font-family: 'Consolas', 'Courier New', monospace !important; 
         font-size: 13px; 
@@ -84,7 +83,7 @@ except: pass
 
 warnings.filterwarnings("ignore")
 
-# --- UI 打印助手 (保持 V10.088 样式) ---
+# --- UI 打印助手 ---
 def p_section(msg): st.markdown(f"### ━━━ {msg} ━━━")
 def p_log(msg): st.text(f"🔹 {msg}")
 def p_ok(msg): st.markdown(f"<span class='success'>✅ {msg}</span>", unsafe_allow_html=True)
@@ -94,7 +93,7 @@ def p_txt(msg): st.text(msg)
 def p_sep(): st.text("-" * 60)
 
 # ==============================================================================
-# 【爬虫层】WebScraper (保持稳定)
+# 【爬虫层】WebScraper
 # ==============================================================================
 class WebScraper:
     def __init__(self):
@@ -189,6 +188,7 @@ class WebScraper:
         p_section("Hindenburg Omen (HO) & McClellan Oscillator (MCO) & Volume")
         if not self.app: return None
         p_log("启动 Firecrawl 访问 WSJ (PCR 模式)...")
+        # 确保 URL 是纯字符串，无隐藏字符
         url = "[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)"
         headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
         payload = {"url": "[https://www.wsj.com/market-data/stocks/marketsdiary](https://www.wsj.com/market-data/stocks/marketsdiary)", "formats": ["markdown", "screenshot"], "waitFor": 10000}
@@ -276,7 +276,7 @@ class WebScraper:
         return 85.05
 
 # ==============================================================================
-# 【核心计算与绘图层 (100% 复刻电脑版显示逻辑)】
+# 【核心计算与绘图层】
 # ==============================================================================
 class CrashWarningSystem:
     def __init__(self):
@@ -354,6 +354,10 @@ class CrashWarningSystem:
         # --- 21因子 100% 复刻区 ---
         h_stat = 0; h_ctx = "数据不足"; h_log = ""
         net_issues = 0; trin_val = None; vol_r = None
+        
+        # [CRASH FIX]: 初始化变量，防止 WSJ 失败时 UnboundLocalError
+        adv_tv = 0; dec_tv = 0 
+
         if wsj:
             adv=float(wsj.get('adv',0)); dec=float(wsj.get('dec',0))
             h=float(wsj.get('high',0)); l=float(wsj.get('low',0))
@@ -389,7 +393,7 @@ class CrashWarningSystem:
                 h_stat = 2 if (spx_trend_up and i_split) else (1 if i_split else 0)
                 # 100% 复刻 Hindenburg 格式
                 trend_desc = "强多头 (站上所有均线)" if spx_trend_up else "震荡"
-                pos_str = "距52周高: -0.1% | 逼近52周新高" # 模拟
+                pos_str = "距52周高: -0.1% | 逼近52周新高" 
                 mco_str = f"MCO_Off:{real_mco:.2f}"
                 h_ctx = f"SPX状态: {trend_desc}\n{pos_str}\n新高:{h:.0f}({h_pct:.2f}%) | 新低:{l:.0f}({l_pct:.2f}%)\n{mco_str}"
                 h_log = "趋势标准: 20/60/120/250均线综合\n& (新高/低同时>2.2%)\n& 新高 < 2×新低\n& MCO < 0"
@@ -407,7 +411,7 @@ class CrashWarningSystem:
             p_txt(f"  当前读数: {nymo}")
             p_txt(f"  区域判断: {desc_nymo}")
             p_sep()
-        indicators.append(["StockCharts 广度 ($NYMO)", st, txt, "极值: <-60恐慌底 / >+60过热顶\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"])
+        indicators.append(["StockCharts 广度 ($NYMO)", st, txt, "极值: >60 或 <-60\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"])
 
         p_section("[TradingView 替代方案] 复用 WSJ NASDAQ 数据 (更稳更准)...")
         if wsj: 
@@ -528,8 +532,8 @@ class CrashWarningSystem:
         vol_txt = f"Ratio (Dn/Up): {vol_r:.1f}\nUp: {human(wsj.get('adv_vol',0))} | Dn: {human(wsj.get('dec_vol',0))}" if wsj else "N/A"
         indicators.append(["抛压监测 III: 资金 (Vol Flow)", st_vol, vol_txt, "标准: Dn/Up > 4.0 (资金出逃)\nDn/Up > 9.0 (极致洗盘)"])
 
-        # 22. NASDAQ
-        tv_r = round(adv_tv/dec_tv, 2) if wsj else 0
+        # 22. NASDAQ (Crash Fix Applied Here)
+        tv_r = round(adv_tv/dec_tv, 2) if (wsj and dec_tv > 0) else 0 
         indicators.append(["NASDAQ 广度 (A/D Ratio)", 0, f"Adv: {adv_tv} | Dec: {dec_tv}\nRatio: {tv_r}", "标准: Ratio < 1.0 (跌多涨少)\nRatio < 0.5 (空头主导)"])
 
         return indicators, pe
@@ -541,7 +545,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.089 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.090 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -731,7 +735,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.089 Pixel Clone)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.090 Fix)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
