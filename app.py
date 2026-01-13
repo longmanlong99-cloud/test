@@ -195,7 +195,7 @@ class WebScraper:
         
         # 硬编码 URL, 防止连接错误
         payload = {
-          target_wsj_url = "https://www.wsj.com/market-data/stocks/marketsdiary" “(https://www.wsj.com/market-data/stocks/marketsdiary)",
+          target_wsj_url = "https://www.wsj.com/market-data/stocks/marketsdiary" "(https://www.wsj.com/market-data/stocks/marketsdiary)",
             "formats": ["markdown", "screenshot"],
             "waitFor": 12000,
             "mobile": False
@@ -773,5 +773,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
