@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.095 (Data Accuracy Restore)
-【修复核心】
-1. URL 硬编码锁定: 遵照用户手工修复方案，移除了所有中间变量，直接在 payload 和 request 中写入纯文本 URL。
-   解决了因变量传递或格式化导致的 WSJ 连接不稳问题。
-2. 稳定性保持: 继承 V10.093 的防崩溃机制。
-3. 100% 复刻: 保持所有日志细节、图片格式不动。
+美股崩盘预警系统 - 21因子 V10.096 (Emergency Fix)
+【修复说明】
+1. 彻底移除变量: 删除了 'target_wsj_url' 变量定义，避免用户粘贴时误入 payload 字典导致 SyntaxError。
+2. 硬编码注入: URL 直接写入 payload 字典，结构最简单，最不容易出错。
+3. 稳定性: 保持 V10.095 的所有逻辑不变。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -185,7 +184,7 @@ class WebScraper:
             except: pass
         return None, None
 
-    # --- [WSJ Hardcoded Fix] ---
+    # --- [WSJ FINAL FIXED] ---
     def fetch_wsj_robust(self):
         p_section("Hindenburg Omen (HO) & McClellan Oscillator (MCO) & Volume")
         if not self.app: return None
@@ -193,9 +192,9 @@ class WebScraper:
         
         headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
         
-        # 硬编码 URL, 防止连接错误
+        # [Emergency Fix]: 直接在字典中定义 URL，防止变量赋值导致的 SyntaxError
         payload = {
-            target_wsj_url = "https://www.wsj.com/market-data/stocks/marketsdiary"
+            "url": "[https://www.wsj.com/market-data/stocks/marketsdiary](https://www.wsj.com/market-data/stocks/marketsdiary)",
             "formats": ["markdown", "screenshot"],
             "waitFor": 12000,
             "mobile": False
@@ -205,8 +204,7 @@ class WebScraper:
 
         try:
             p_log("发送 API 请求 (获取云端 Markdown + 截图)...")
-            # 使用硬编码 API Endpoint
-            r = requests.post("https://api.firecrawl.dev/v1/scrape(https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=90)
+            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=90)
             
             if r.status_code==200:
                 data = r.json()
@@ -270,7 +268,6 @@ class WebScraper:
         p_log("请求云端截图...")
         if not (self.app and GENAI_API_KEY): return None
         try:
-            # 同样净化 URL
             target_nymo_url = "https://stockcharts.com/h-sc/ui?s=$NYMO"
             api_endpoint = "https://api.firecrawl.dev/v1/scrape"
             
@@ -568,7 +565,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.093 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.096 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -758,7 +755,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.093 Clean URL)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.096 Emergency Fix)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
@@ -773,9 +770,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
