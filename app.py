@@ -419,7 +419,7 @@ class CrashWarningSystem:
         p_log("获取标普500成分股名单与数据 (5年)...")
         # 严格参照老代码 download_5y_data 中的成分股获取与分批下载逻辑
         try:
-            wiki_url = "[https://en.wikipedia.org/wiki/List_of_S%26P_500_companies](https://en.wikipedia.org/wiki/List_of_S%26P_500_companies)"
+            wiki_url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
             tables = pd.read_html(requests.get(wiki_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15).text)
             tickers = tables[0]['Symbol'].str.replace('.', '-', regex=False).tolist()
             
@@ -900,3 +900,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
