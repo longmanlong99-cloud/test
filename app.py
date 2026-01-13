@@ -389,7 +389,7 @@ class WebScraper:
         nymo_ratio = None
         try:
             # 100% 拷贝老代码 MCO 官方源逻辑
-            url_off = "[https://www.mcoscillator.com/](https://www.mcoscillator.com/)"
+            url_off = "https://www.mcoscillator.com/"
             resp = self.app.scrape(url_off, formats=['markdown'])
             md = getattr(resp, 'markdown', '')
             if md:
@@ -890,3 +890,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
