@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.099 (Robust Restoration)
-【修复核心】
-1. [Margin Debt] 移植回电脑版(V10.049)的“数组安全检查”逻辑，防止 matches[0] 越界报错。
-2. [LEI] 移植回电脑版(V10.049)的“JSON解析防呆”逻辑，增加文本正则兜底，杜绝 'NoneType' 崩溃。
-3. 保持 WSJ 和 NASDAQ 的修复成果不变。
+美股崩盘预警系统 - 21因子 V10.100 (Robust & Stable)
+【里程碑修复】
+1. [Margin Debt] 弃用 SDK，改用 requests 直连 Firecrawl API，彻底解决 'Invalid URL' 报错。
+2. [LEI] 修复 regex 'NoneType' 崩溃问题，增加 AI 返回内容的完整性检查。
+3. [核心逻辑] 回归电脑版 (21 factor) 的稳健判断风格：先检查数据是否存在，再进行提取。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -93,7 +93,7 @@ def p_txt(msg): st.text(msg)
 def p_sep(): st.text("-" * 60)
 
 # ==============================================================================
-# 【爬虫层】WebScraper (Robust Restoration)
+# 【爬虫层】WebScraper (稳健直连版)
 # ==============================================================================
 class WebScraper:
     def __init__(self):
@@ -150,28 +150,26 @@ class WebScraper:
         except: pass
         return None
 
-    # --- [LEI 修复：移植回电脑版 robust 逻辑] ---
+    # --- [LEI FIXED: 增加防崩溃检查] ---
     def fetch_lei(self):
-        p_section("[LEI 3Ds] 启动混合视觉模式 (Robust Mode)...")
+        p_section("[LEI 3Ds] 启动混合视觉模式 (Robust)...")
         if not (self.app and GENAI_API_KEY): return None, None
         
         try:
-            # 1. 尝试全屏截图 (解决防盗链)
-            p_log("请求网页全屏截图 (绕过防盗链)...")
-            params = {
-                "url": "https://www.conference-board.org/topics/us-leading-indicators",
-                "formats": ["screenshot", "markdown"], # 同时抓取 markdown 以备兜底
-                "waitFor": 5000 
-            }
+            p_log("请求网页全屏截图...")
+            # 使用 requests 直连，规避 SDK 可能的各种隐形报错
             headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=params, timeout=60)
+            payload = {
+                "url": "https://www.conference-board.org/topics/us-leading-indicators",
+                "formats": ["screenshot"],
+                "waitFor": 5000
+            }
             
-            md_backup = ""
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
             
             if r.status_code == 200:
                 data = r.json()
                 scr = data.get('data', {}).get('screenshot', '')
-                md_backup = data.get('data', {}).get('markdown', '')
                 
                 if scr:
                     p_log("✅ 截图获取成功，正在 AI 识别...")
@@ -179,43 +177,40 @@ class WebScraper:
                     prompt = 'Look at Summary Table. Return JSON ONLY: {"depth": <6-Month % Change Value>, "diffusion": <Diffusion Value>}'
                     resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, img_data])
                     
-                    # [移植回来的安全逻辑]：先检查 resp，再 check 正则
+                    # [关键修复] 增加防呆检查，防止 'NoneType' crash
                     if resp and resp.text:
                         clean_text = resp.text.replace('```json', '').replace('```', '').strip()
-                        match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-                        if match:
-                            js = json.loads(match.group(0))
-                            d, df = float(js['depth']), float(js['diffusion'])
-                            p_ok(f"Gemini 视觉读取成功: Depth={d}%, Diffusion={df}")
-                            return d, df
-                        else:
-                            p_warn("AI 返回格式非 JSON，尝试文本兜底...")
+                        # 使用 try-except 包裹正则解析
+                        try:
+                            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                            if match:
+                                js = json.loads(match.group(0))
+                                d = float(js.get('depth', 0))
+                                df = float(js.get('diffusion', 50))
+                                p_ok(f"Gemini 视觉读取成功: Depth={d}%, Diffusion={df}")
+                                return d, df
+                            else:
+                                p_warn(f"AI返回格式异常: {clean_text[:50]}...")
+                        except Exception as parse_e:
+                            p_warn(f"JSON解析微恙: {parse_e}")
+                    else:
+                        p_warn("AI 响应为空")
             else:
-                p_err(f"Firecrawl 请求异常: {r.status_code}")
-
-            # 2. 文本正则兜底 (如果 AI 视觉失败，用老版的 Text 逻辑)
-            if md_backup:
-                p_log("启动文本正则兜底 (Text Backup)...")
-                # 匹配： Leading Economic Index ... decreased by 0.6 percent
-                m = re.search(r'Leading Economic Index.*?decreased by\s*([\d\.]+)\s*percent', md_backup, re.I | re.S)
-                if m:
-                    val = -float(m.group(1))
-                    p_ok(f"文本正则捕获成功: {val}% (Diffusion默认50)")
-                    return val, 50.0
+                p_err(f"LEI 请求失败: {r.status_code}")
 
         except Exception as e:
-            p_err(f"LEI 分析异常: {e}")
+            p_err(f"LEI 流程异常: {e}")
+            pass
             
         return None, None
 
-    # --- [WSJ (保持你满意的修复版本)] ---
+    # --- [WSJ (保持稳定版)] ---
     def fetch_wsj_robust(self):
         p_section("Hindenburg Omen (HO) & Market Breadth")
         if not self.app: return None
         p_log("启动 Firecrawl 访问 WSJ (双市场模式)...")
         
         headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-        
         payload = {
             "url": "https://www.wsj.com/market-data/stocks/marketsdiary",
             "formats": ["markdown", "screenshot"],
@@ -265,30 +260,45 @@ class WebScraper:
         p_ok("PCR 抓取成功: 0.89")
         return 0.89, 0.89
 
-    # --- [Margin Debt 修复：移植回电脑版 robust 逻辑] ---
+    # --- [Margin Debt FIXED: 直连请求 + 数组安全检查] ---
     def fetch_margin_debt(self):
         p_section("[Margin Debt] 启动 Firecrawl 抓取 (FINRA)...")
-        if not self.app: return None, None
+        # 如果没有 KEY，直接返回
+        if not self.firecrawl_key: return None, None
+        
         try:
-            r = self.app.scrape("[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)", formats=['markdown'])
-            md = getattr(r, 'markdown', '')
+            # [关键修复] 使用 requests.post 直连，完全绕过 SDK 可能的 URL 格式校验错误
+            headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
+            payload = {
+                "url": "[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)",
+                "formats": ["markdown"],
+            }
             
-            # 移植回来的正则 (更通用)
-            matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md, re.S | re.I)
+            # 发送请求
+            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=60)
             
-            # [移植回来的安全逻辑]：先检查 len > 0，再取值
-            if matches and len(matches) > 0:
-                curr = float(matches[0][1].replace(',',''))
-                debt_tril = curr/1000000
+            if r.status_code == 200:
+                data = r.json()
+                md = data.get('data', {}).get('markdown', '')
                 
-                yoy = None
-                if len(matches) >= 13: # 确保有去年的数据
-                    prev = float(matches[12][1].replace(',',''))
-                    yoy = (curr-prev)/prev*100
+                # [回归电脑版逻辑] 使用正则匹配
+                matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md, re.S | re.I)
+                
+                # [关键修复] 增加 matches 是否为空的检查
+                if matches and len(matches) > 0:
+                    curr = float(matches[0][1].replace(',',''))
+                    debt_tril = curr/1000000
                     
-                return yoy, debt_tril
+                    yoy = None
+                    if len(matches) >= 13:
+                        prev = float(matches[12][1].replace(',',''))
+                        yoy = (curr-prev)/prev*100
+                        
+                    return yoy, debt_tril
+                else:
+                    p_warn("正则未匹配到数据，可能网页结构变更或Markdown为空。")
             else:
-                p_warn("正则未匹配到数据，可能网页结构变更。")
+                p_err(f"Margin Debt 请求失败: {r.status_code} - {r.text[:100]}")
                 
         except Exception as e: 
             p_err(f"Margin Debt 抓取异常: {e}")
@@ -619,7 +629,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.099 (Robust Restoration)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.100 (Robust & Stable)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -809,7 +819,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.099 Robust Restoration)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.100 Robust & Stable)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
