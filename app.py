@@ -3,8 +3,10 @@
 美股崩盘预警系统 - 21因子 V10.087 (Ultimate 110% Replica)
 【执行标准】
 1. 图片: 33x46英寸超大红绿报表，包含21+个指标 (100%复刻电脑版样式)。
-2. 日志: 恢复 output.txt 中的所有详细文本 (深度宏观、板块轮动全名单、SMT各周期详情、Vincent点位)。
-3. 数据: 补全 NYMO、Margin Debt 的抓取逻辑，力求消灭图片中的 "N/A"。
+2. 日志: 严格恢复 output.txt 中的所有详细文本 (深度宏观、板块轮动全名单、SMT各周期详情、Vincent点位)。
+   - 绝不精简任何一行日志输出。
+   - 绝不修改任何未被要求的逻辑。
+3. 数据: 补全 NYMO、Margin Debt 的抓取逻辑。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
