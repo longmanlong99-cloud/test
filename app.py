@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """
 美股崩盘预警系统 - 21因子 V10.096 (Emergency Fix)
 【修复说明】
@@ -194,7 +194,7 @@ class WebScraper:
         
         # [Emergency Fix]: 直接在字典中定义 URL，防止变量赋值导致的 SyntaxError
         payload = {
-            "url": "[https://www.wsj.com/market-data/stocks/marketsdiary](https://www.wsj.com/market-data/stocks/marketsdiary)",
+            "url": "https://www.wsj.com/market-data/stocks/marketsdiary(https://www.wsj.com/market-data/stocks/marketsdiary)",
             "formats": ["markdown", "screenshot"],
             "waitFor": 12000,
             "mobile": False
@@ -770,3 +770,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
