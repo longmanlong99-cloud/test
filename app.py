@@ -232,7 +232,7 @@ class WebScraper:
         p_section("[Margin Debt] 启动 Firecrawl 抓取 (FINRA)...")
         if not self.app: return None, None
         try:
-            r = self.app.scrape("[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)", formats=['markdown'])
+            r = self.app.scrape("https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics")
             md = getattr(r, 'markdown', '')
             if md:
                 matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md, re.S | re.I)
@@ -257,12 +257,12 @@ class WebScraper:
 
     def fetch_nymo_vision(self):
         p_log("启动 Firecrawl 视觉抓取 StockCharts ($NYMO)...")
-        target_url = "[https://stockcharts.com/h-sc/ui?s=$NYMO](https://stockcharts.com/h-sc/ui?s=$NYMO)"
+        target_url = "https://stockcharts.com/h-sc/ui?s=$NYMO"
         headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
         payload = {"url": target_url, "formats": ["screenshot"], "waitFor": 8000}
         try:
             p_log("请求云端截图...")
-            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=60)
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
             if r.status_code==200:
                 p_log("截图获取成功，正在进行 AI 读数...")
                 scr = r.json().get('data', {}).get('screenshot', '')
@@ -487,3 +487,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
