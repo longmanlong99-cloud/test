@@ -9,4 +9,7 @@ firecrawl-py
 google-genai
 Pillow
 fear-and-greed
+html5lib
+lxml
+
 
