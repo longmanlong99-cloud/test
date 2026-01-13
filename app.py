@@ -194,7 +194,7 @@ class WebScraper:
         
         # [Emergency Fix]: 直接在字典中定义 URL，防止变量赋值导致的 SyntaxError
         payload = {
-            "url": "https://www.wsj.com/market-data/stocks/marketsdiary(https://www.wsj.com/market-data/stocks/marketsdiary)",
+            "url": "https://www.wsj.com/market-data/stocks/marketsdiary",
             "formats": ["markdown", "screenshot"],
             "waitFor": 12000,
             "mobile": False
@@ -770,4 +770,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
