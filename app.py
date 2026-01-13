@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.091 (WSJ Connection Fix)
-【核心修复】
-1. WSJ 抓取修复: 严格复刻电脑版写法，直接在 requests.post 中使用硬编码 URL字符串，
-   解决 'No connection adapters' 报错 (通常由变量赋值时的隐形字符引起)。
-2. 防崩溃机制: 保持 adv_tv/dec_tv 的默认值初始化，防止因抓取失败导致的闪退。
-3. 100% 复刻: 保持图片布局、红绿配色、详细日志与 output.txt 完全一致。
+美股崩盘预警系统 - 21因子 V10.093 (Clean URL Fix)
+【修复核心】
+1. URL 格式净化: 修正了之前代码中 WSJ URL 可能包含 Markdown 格式 ("[https...](...)") 或空格的问题。
+   现在的 URL 是纯净的字符串，移除了所有可能导致 Connection Adapter 错误的杂质。
+2. 稳定性保持: 继承 V10.092 的防崩溃机制 (变量预设)，确保万一网络波动程序也不会闪退。
+3. 100% 复刻: 保持 V10.088/089 的所有日志细节、图片格式不动。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -94,7 +94,7 @@ def p_txt(msg): st.text(msg)
 def p_sep(): st.text("-" * 60)
 
 # ==============================================================================
-# 【爬虫层】WebScraper (WSJ 修复版)
+# 【爬虫层】WebScraper (URL 净化版)
 # ==============================================================================
 class WebScraper:
     def __init__(self):
@@ -185,16 +185,20 @@ class WebScraper:
             except: pass
         return None, None
 
-    # --- [WSJ Connection Fix] ---
+    # --- [WSJ Clean URL Fix] ---
     def fetch_wsj_robust(self):
         p_section("Hindenburg Omen (HO) & McClellan Oscillator (MCO) & Volume")
         if not self.app: return None
         p_log("启动 Firecrawl 访问 WSJ (PCR 模式)...")
         
-        # 100% 复刻电脑版写法，不使用变量中转 URL，避免隐形字符
         headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
+        
+        # [Fix]: 纯净 URL 字符串，无 markdown 标记，无空格
+        target_wsj_url = "https://www.wsj.com/market-data/stocks/marketsdiary"
+        api_endpoint = "https://api.firecrawl.dev/v1/scrape"
+       
         payload = {
-            "url": "[https://www.wsj.com/market-data/stocks/marketsdiary](https://www.wsj.com/market-data/stocks/marketsdiary)", 
+            "url": target_wsj_url, 
             "formats": ["markdown", "screenshot"], 
             "waitFor": 12000,
             "mobile": False
@@ -202,8 +206,8 @@ class WebScraper:
         
         try:
             p_log("发送 API 请求 (获取云端 Markdown + 截图)...")
-            # 直接硬编码 URL，确保无 connection adapter 错误
-            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=90)
+            # 使用纯净的 api_endpoint 变量
+            r = requests.post(api_endpoint, headers=headers, json=payload, timeout=90)
             
             if r.status_code==200:
                 data = r.json()
@@ -221,6 +225,9 @@ class WebScraper:
                     return res
             else:
                 p_err(f"WSJ Firecrawl 状态码: {r.status_code}")
+                # 打印出返回的错误信息以便调试
+                try: p_txt(f"API Error Info: {r.text[:200]}")
+                except: pass
         except Exception as e: p_err(f"WSJ Error: {e}")
         return None
 
@@ -264,10 +271,14 @@ class WebScraper:
         p_log("请求云端截图...")
         if not (self.app and GENAI_API_KEY): return None
         try:
-            # 同样使用硬编码 URL
+            # 同样净化 URL
+            target_nymo_url = "https://stockcharts.com/h-sc/ui?s=$NYMO"
+            api_endpoint = "https://api.firecrawl.dev/v1/scrape"
+            
             headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-            payload = {"url": "https://stockcharts.com/h-sc/ui?s=$NYMO", "formats": ["screenshot"], "waitFor": 8000}
-            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
+            payload = {"url": target_nymo_url, "formats": ["screenshot"], "waitFor": 8000}
+            
+            r = requests.post(api_endpoint, headers=headers, json=payload, timeout=60)
             
             if r.status_code==200:
                 p_log("截图获取成功，正在进行 AI 读数...")
@@ -368,7 +379,7 @@ class CrashWarningSystem:
         h_stat = 0; h_ctx = "数据不足"; h_log = ""
         net_issues = 0; trin_val = None; vol_r = None
         
-        # [CRASH FIX]: 初始化变量，防止 WSJ 失败时 UnboundLocalError
+        # [CRASH FIX]: 初始化变量
         adv_tv = 0; dec_tv = 0 
 
         if wsj:
@@ -558,7 +569,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.091 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.093 (Score: {risk_score:.1f})", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -748,7 +759,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.091 WSJ Fix)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.093 Clean URL)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
