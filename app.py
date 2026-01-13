@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.051 (Secure Secrets Edition)
-【安全与修复更新】
-1. 安全升级：移除所有硬编码 API Key，改为从 Streamlit Secrets 读取。
-   (GENAI_API_KEY, FRED_KEY, FIRECRAWL_KEY 均需在后台配置)
-2. 缓存优化：保留 @st.cache_data 机制，防止 Yahoo Finance 限流。
+美股崩盘预警系统 - 21因子 V10.052 (Final Cloud Fix)
+【最终修复】
+1. 移除末尾的 input() 阻塞代码，防止 Streamlit Cloud 卡死/断连。
+2. 保持 Secrets 读取与缓存机制。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -46,17 +45,23 @@ except ImportError:
 # ==========================================
 # 【API 配置区 - 安全版】
 # ==========================================
-# 自动从 Streamlit Secrets 读取 Key，防止上传 GitHub 后被封
-# 请确保在 Streamlit Cloud -> App Settings -> Secrets 中配置了以下三个变量
+# 自动从 Streamlit Secrets 读取 Key
 try:
     GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
-    USER_FRED_KEY = st.secrets["FRED_KEY"]
+    # 兼容您之前设置的 USER_FRED_KEY 或 FRED_KEY
+    if "USER_FRED_KEY" in st.secrets:
+        USER_FRED_KEY = st.secrets["USER_FRED_KEY"]
+    elif "FRED_KEY" in st.secrets:
+        USER_FRED_KEY = st.secrets["FRED_KEY"]
+    else:
+        raise KeyError("FRED_KEY 或 USER_FRED_KEY")
+        
     FIRECRAWL_KEY = st.secrets["FIRECRAWL_KEY"]
 except FileNotFoundError:
     st.error("❌ 错误：未检测到 Secrets 配置！请在 Streamlit Cloud 后台 Settings -> Secrets 中填入 API Key。")
     st.stop()
 except KeyError as k:
-    st.error(f"❌ 错误：Secrets 中缺少键值 {k}。请检查配置文件名拼写是否正确。")
+    st.error(f"❌ 错误：Secrets 中缺少键值 {k}。请检查后台配置的名称。")
     st.stop()
 
 # 初始化 Google AI
@@ -167,34 +172,35 @@ class WebScraper:
             print_err(f"Shiller PE 抓取异常: {e}")
         return None
 
-    # --- 2. Fear & Greed ---
+    # --- 2. Fear & Greed (已升级为 Firecrawl) ---
     def fetch_fear_greed(self):
-        print_step("[Fear & Greed] 方案 A: 调用 Python 库 (fear_and_greed)...")
+        print_step("[Fear & Greed] 启动 Firecrawl 智能抓取 (CNN)...")
+        url = "https://www.cnn.com/markets/fear-and-greed"
         try:
-            import fear_and_greed
-            index_data = fear_and_greed.get()
-            score = int(index_data.value)
-            rating = index_data.description
-            if isinstance(rating, str): rating = rating.capitalize()
-            print_ok(f"[Fear & Greed] Python 库调用成功: {score} ({rating})")
-            return score, rating
-        except Exception:
-            print_warn("Python 库调用出错，切换至 API 直连...")
-
-        print_step("[Fear & Greed] 方案 B: 启动 API 直连模式...")
-        api_url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        try:
-            r = requests.get(api_url, headers=headers, timeout=20)
-            if r.status_code == 200:
-                data = r.json()
-                if 'fear_and_greed' in data and 'score' in data['fear_and_greed']:
-                    score = int(data['fear_and_greed']['score'])
-                    rating = data['fear_and_greed']['rating']
-                    print_ok(f"[Fear & Greed] API 直连成功: {score} ({rating})")
+            # 使用 Firecrawl 绕过 CNN 防火墙
+            response = self.app.scrape(url, formats=['markdown'])
+            md = getattr(response, 'markdown', '')
+            
+            if md:
+                # 寻找指数数值
+                match = re.search(r'(?:Fear\s*&\s*Greed\s*Index|Current\s*Reading).*?(\d{1,3})', md, re.S | re.I)
+                
+                if match:
+                    score = int(match.group(1))
+                    rating = "Neutral"
+                    if score < 25: rating = "Extreme Fear"
+                    elif score < 45: rating = "Fear"
+                    elif score < 55: rating = "Neutral"
+                    elif score < 75: rating = "Greed"
+                    else: rating = "Extreme Greed"
+                    
+                    print_ok(f"[Fear & Greed] Firecrawl 抓取成功: {score} ({rating})")
                     return score, rating
         except Exception as e:
-            print_err(f"F&G 获取失败: {e}")
+            print_err(f"F&G Firecrawl 抓取异常: {e}")
+            
+        # 兜底：如果失败返回 None
+        print_warn("F&G 抓取失败，将跳过显示。")
         return None, "获取失败"
 
     # --- 4. GDP ---
@@ -1798,5 +1804,4 @@ if __name__ == "__main__":
         print_err(f"程序运行出错: {e}")
         traceback.print_exc() 
     print("\n")
-
-
+    print(">>> 计算完成。")
