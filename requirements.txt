@@ -4,9 +4,7 @@ pandas
 numpy
 yfinance
 requests
-beautifulsoup4
 fredapi
-google-generativeai
-firecrawl-python
+firecrawl-py
+google-genai
 Pillow
-fear-and-greed
