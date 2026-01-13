@@ -204,7 +204,7 @@ class WebScraper:
 
         try:
             p_log("发送 API 请求 (获取云端 Markdown + 截图)...")
-            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=90)
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=90)
             
             if r.status_code==200:
                 data = r.json()
@@ -770,5 +770,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
