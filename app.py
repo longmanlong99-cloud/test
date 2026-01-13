@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - 21因子 V10.100 (Robust & Stable)
-【里程碑修复】
-1. [Margin Debt] 弃用 SDK，改用 requests 直连 Firecrawl API，彻底解决 'Invalid URL' 报错。
-2. [LEI] 修复 regex 'NoneType' 崩溃问题，增加 AI 返回内容的完整性检查。
-3. [核心逻辑] 回归电脑版 (21 factor) 的稳健判断风格：先检查数据是否存在，再进行提取。
+美股崩盘预警系统 - 21因子 V10.101 (Back to Classic)
+【修正说明】
+1. 承认错误：不再尝试新的“直连”或“截图”骚操作。
+2. 逻辑回滚：Margin Debt 和 LEI 完全恢复为 '21 factor 2026-01-12A.py' (电脑版) 的写法。
+   - Margin Debt: 恢复使用正则 findAll + 数组长度检查。
+   - LEI: 恢复使用 anchor 定位 + 正则提取。
+3. 保持 WSJ 的修复（因为那个确实修好了）。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -93,7 +95,7 @@ def p_txt(msg): st.text(msg)
 def p_sep(): st.text("-" * 60)
 
 # ==============================================================================
-# 【爬虫层】WebScraper (稳健直连版)
+# 【爬虫层】WebScraper (回归经典版)
 # ==============================================================================
 class WebScraper:
     def __init__(self):
@@ -150,57 +152,69 @@ class WebScraper:
         except: pass
         return None
 
-    # --- [LEI FIXED: 增加防崩溃检查] ---
+    # --- [LEI 回滚：完全使用 21 factor 2026-01-12A.py 的逻辑] ---
     def fetch_lei(self):
-        p_section("[LEI 3Ds] 启动混合视觉模式 (Robust)...")
+        p_section("[LEI 3Ds] 启动混合视觉模式 (Old Code Logic)...")
         if not (self.app and GENAI_API_KEY): return None, None
         
         try:
-            p_log("请求网页全屏截图...")
-            # 使用 requests 直连，规避 SDK 可能的各种隐形报错
-            headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-            payload = {
-                "url": "https://www.conference-board.org/topics/us-leading-indicators",
-                "formats": ["screenshot"],
-                "waitFor": 5000
-            }
+            # 这里的逻辑完全复刻自老代码 fetch_lei
+            p_log("正在解析页面结构 (寻找 Summary Table 图片)...")
+            response = self.app.scrape("https://www.conference-board.org/topics/us-leading-indicators", formats=['markdown'])
+            md = getattr(response, 'markdown', '')
+            img_url = None
             
-            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
-            
-            if r.status_code == 200:
-                data = r.json()
-                scr = data.get('data', {}).get('screenshot', '')
+            if md:
+                # [Smart Restore] 智能锚点定位 (老代码核心)
+                anchor_idx = md.find("Summary Table")
+                if anchor_idx == -1: anchor_idx = md.find("Composite Economic Indexes")
                 
-                if scr:
-                    p_log("✅ 截图获取成功，正在 AI 识别...")
-                    img_data = Image.open(io.BytesIO(requests.get(scr).content))
-                    prompt = 'Look at Summary Table. Return JSON ONLY: {"depth": <6-Month % Change Value>, "diffusion": <Diffusion Value>}'
-                    resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, img_data])
+                if anchor_idx != -1:
+                    # 只看锚点附近 1500 字符
+                    snippet = md[anchor_idx : anchor_idx + 1500]
+                    # 寻找图片链接
+                    img_match = re.search(r'\((https://.*?lei.*?\.png)\)', snippet, re.I)
+                    if img_match:
+                        img_url = img_match.group(1)
+                        p_ok(f"定位到数据图片: {img_url.split('/')[-1]}")
+                
+                # 兜底
+                if not img_url:
+                    all_imgs = re.findall(r'\((https://.*?lei.*?\.png)\)', md, re.I)
+                    if all_imgs: 
+                        img_url = all_imgs[0]
+            
+            if img_url:
+                p_log("下载图片并进行 AI 分析...")
+                img_resp = requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                if img_resp.status_code == 200:
+                    img_data = Image.open(io.BytesIO(img_resp.content))
+                    # Prompt 保持不变，因为老代码也是这个 Prompt
+                    prompt = """
+                    Analyze this LEI Summary Table image.
+                    Extract two values:
+                    1. "6-Month % Change" (last column, e.g., -2.1). Key: "depth"
+                    2. "Diffusion" (value 0-100, e.g., 35.0). Key: "diffusion"
+                    Return ONLY JSON. Example: {"depth": -2.1, "diffusion": 35.0}
+                    """
+                    ai_resp = client.models.generate_content(
+                        model='gemini-2.0-flash',
+                        contents=[prompt, img_data]
+                    )
                     
-                    # [关键修复] 增加防呆检查，防止 'NoneType' crash
-                    if resp and resp.text:
-                        clean_text = resp.text.replace('```json', '').replace('```', '').strip()
-                        # 使用 try-except 包裹正则解析
-                        try:
-                            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-                            if match:
-                                js = json.loads(match.group(0))
-                                d = float(js.get('depth', 0))
-                                df = float(js.get('diffusion', 50))
-                                p_ok(f"Gemini 视觉读取成功: Depth={d}%, Diffusion={df}")
-                                return d, df
-                            else:
-                                p_warn(f"AI返回格式异常: {clean_text[:50]}...")
-                        except Exception as parse_e:
-                            p_warn(f"JSON解析微恙: {parse_e}")
-                    else:
-                        p_warn("AI 响应为空")
-            else:
-                p_err(f"LEI 请求失败: {r.status_code}")
+                    # 老代码的解析逻辑
+                    if ai_resp and ai_resp.text:
+                        json_match = re.search(r'\{.*\}', ai_resp.text, re.DOTALL)
+                        if json_match:
+                            js = json.loads(json_match.group(0))
+                            depth = js.get('depth')
+                            diffusion = js.get('diffusion')
+                            if depth is not None:
+                                p_ok(f"Gemini 视觉读取成功: Depth={depth}%, Diffusion={diffusion}")
+                                return float(depth), float(diffusion)
 
         except Exception as e:
             p_err(f"LEI 流程异常: {e}")
-            pass
             
         return None, None
 
@@ -260,48 +274,40 @@ class WebScraper:
         p_ok("PCR 抓取成功: 0.89")
         return 0.89, 0.89
 
-    # --- [Margin Debt FIXED: 直连请求 + 数组安全检查] ---
+    # --- [Margin Debt 回滚：完全使用 21 factor 2026-01-12A.py 的逻辑] ---
     def fetch_margin_debt(self):
         p_section("[Margin Debt] 启动 Firecrawl 抓取 (FINRA)...")
-        # 如果没有 KEY，直接返回
-        if not self.firecrawl_key: return None, None
+        if not self.app: return None, None
+        
+        # 老代码逻辑：先抓 GDP (这里简化一下，直接抓 Margin)
+        # 严格复刻 fetch_margin_debt 内部抓取逻辑
+        url = "[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)"
         
         try:
-            # [关键修复] 使用 requests.post 直连，完全绕过 SDK 可能的 URL 格式校验错误
-            headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-            payload = {
-                "url": "[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)",
-                "formats": ["markdown"],
-            }
+            # 老代码也是用的 self.app.scrape
+            response = self.app.scrape(url, formats=['markdown'])
+            md = getattr(response, 'markdown', '')
             
-            # 发送请求
-            r = requests.post("[https://api.firecrawl.dev/v1/scrape](https://api.firecrawl.dev/v1/scrape)", headers=headers, json=payload, timeout=60)
-            
-            if r.status_code == 200:
-                data = r.json()
-                md = data.get('data', {}).get('markdown', '')
-                
-                # [回归电脑版逻辑] 使用正则匹配
+            if md:
+                # 严格复刻正则和判断逻辑
                 matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md, re.S | re.I)
-                
-                # [关键修复] 增加 matches 是否为空的检查
                 if matches and len(matches) > 0:
-                    curr = float(matches[0][1].replace(',',''))
-                    debt_tril = curr/1000000
+                    latest_date, latest_val_str = matches[0]
+                    absolute_debt_trillion = float(latest_val_str.replace(',', '')) / 1_000_000
                     
-                    yoy = None
-                    if len(matches) >= 13:
-                        prev = float(matches[12][1].replace(',',''))
-                        yoy = (curr-prev)/prev*100
-                        
-                    return yoy, debt_tril
-                else:
-                    p_warn("正则未匹配到数据，可能网页结构变更或Markdown为空。")
-            else:
-                p_err(f"Margin Debt 请求失败: {r.status_code} - {r.text[:100]}")
-                
-        except Exception as e: 
+                    # 这里暂时不需要 GDP 就可以算绝对值和 YoY
+                    yoy_val = None
+                    if len(matches) >= 13: 
+                        prev_val = float(matches[12][1].replace(',', ''))
+                        current_val = float(latest_val_str.replace(',', ''))
+                        yoy_val = ((current_val - prev_val) / prev_val) * 100
+                    
+                    # 为了兼容新接口，返回 yoy 和 absolute_debt
+                    p_ok(f"Margin数据: {absolute_debt_trillion:.3f}T, YoY: {yoy_val:.1f}%")
+                    return yoy_val, absolute_debt_trillion
+        except Exception as e:
             p_err(f"Margin Debt 抓取异常: {e}")
+            
         return None, None
 
     def fetch_nfci(self):
@@ -629,7 +635,7 @@ class CrashWarningSystem:
         fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
         ax = fig.add_subplot(111); ax.axis('off')
         
-        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.100 (Robust & Stable)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.96, f"美股崩盘预警系统 - 21因子 V10.101 (Back to Classic)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
         ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')}", ha='center', va='center', fontsize=18, color='#CCCCCC')
 
         table_data = []
@@ -819,7 +825,7 @@ def run_smt_log():
 
 def main():
     if st.sidebar.button("🔄 刷新"): st.cache_data.clear(); st.rerun()
-    st.markdown("# 美股崩盘预警系统 Pro (V10.100 Robust & Stable)")
+    st.markdown("# 美股崩盘预警系统 Pro (V10.101 Back to Classic)")
     
     app = CrashWarningSystem()
     pe_val = app.generate_chart()
