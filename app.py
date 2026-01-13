@@ -274,7 +274,14 @@ class WebScraper:
 class CrashWarningSystem:
     def __init__(self):
         self.scraper = WebScraper()
-        self.colors = {'bg': '#4B535C', 'table_header': '#3E4953', 'row_safe': '#2E8B57', 'text_safe': '#FFFFFF', 'row_warn': '#8B0000', 'text_warn': '#FFFFFF', 'row_risk': '#B8860B', 'text_risk': '#FFFFFF', 'title': '#FFEE88', 'edge': '#606972'}
+        # 1:1 复刻电脑版配色
+        self.colors = {
+            'bg': '#4B535C', 'table_header': '#3E4953', 
+            'row_safe': '#2E8B57', 'text_safe': '#FFFFFF', 
+            'row_warn': '#8B0000', 'text_warn': '#FFFFFF', 
+            'row_risk': '#B8860B', 'text_risk': '#FFFFFF', 
+            'title': '#FFEE88', 'edge': '#606972'
+        }
         self.shared_wsj_data = None
 
     def fetch_and_calculate(self):
