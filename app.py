@@ -281,7 +281,7 @@ class WebScraper:
         
         # 老代码逻辑：先抓 GDP (这里简化一下，直接抓 Margin)
         # 严格复刻 fetch_margin_debt 内部抓取逻辑
-        url = "[https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics](https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics)"
+        url = "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics"
         
         try:
             # 老代码也是用的 self.app.scrape
@@ -840,3 +840,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
