@@ -1,0 +1,15 @@
+name: sf_env
+channels:
+  - snowflake
+dependencies:
+  - python=3.8
+  - streamlit
+  - pandas
+  - numpy
+  - matplotlib
+  - yfinance
+  - plotly
+  - requests
+  # 注意：像 firecrawl-py 和 google-genai 这种第三方库
+  # 如果 Snowflake 的官方仓库里没有，这里写了也会报错。
+  # 我们先保证 matplotlib 能运行。
