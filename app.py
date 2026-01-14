@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - Streamlit Cloud 移植版 (基于 21因子 V10.049 本地版)
-### CHANGED HERE ###: 适配 Streamlit 环境，保留所有本地版高级逻辑
+美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (稳定性修复版)
+### CHANGED HERE ###: 核心修复 - 禁用 yfinance 多线程下载 (threads=False)，解决 Streamlit Cloud "can't start new thread" 崩溃问题。
 """
-import streamlit as st  ### CHANGED HERE ###
+import streamlit as st
 import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
@@ -25,13 +25,13 @@ import io
 import subprocess 
 from firecrawl import Firecrawl 
 from PIL import Image 
-from matplotlib import font_manager ### CHANGED HERE ###
+from matplotlib import font_manager
 
 # --- 0. Streamlit 页面配置 ---
-st.set_page_config(page_title="美股崩盘预警系统 Pro", layout="wide") ### CHANGED HERE ###
+st.set_page_config(page_title="美股崩盘预警系统 Pro", layout="wide")
 
-# --- 1. 字体加载 (解决 Linux 中文乱码) ---
-@st.cache_resource ### CHANGED HERE ###
+# --- 1. 字体加载 ---
+@st.cache_resource
 def load_fonts():
     font_path = "SimHei.ttf"
     if not os.path.exists(font_path):
@@ -43,25 +43,20 @@ def load_fonts():
         font_manager.fontManager.addfont(font_path)
         plt.rcParams['font.sans-serif'] = ['SimHei']
         plt.rcParams['axes.unicode_minus'] = False
-load_fonts() ### CHANGED HERE ###
+load_fonts()
 
-# --- FRED API 库 ---
-try:
-    from fredapi import Fred
-except ImportError:
-    st.warning(">>> 提示：未找到 fredapi 库") ### CHANGED HERE ###
+# --- 库检查 ---
+try: from fredapi import Fred
+except ImportError: st.warning(">>> 提示：未找到 fredapi 库")
 
-# --- Google Gemini AI 库 ---
-try:
-    from google import genai
-except ImportError:
-    st.error(">>> 严重错误：未找到 google-genai 库。") ### CHANGED HERE ###
-    st.stop() ### CHANGED HERE ###
+try: from google import genai
+except ImportError: 
+    st.error(">>> 严重错误：未找到 google-genai 库。")
+    st.stop()
 
 # ==========================================
-# 【API 配置区 - 改为 Secrets】
+# 【API 配置区】
 # ==========================================
-# ### CHANGED HERE ###: 从 st.secrets 读取密钥
 try:
     GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
     USER_FRED_KEY = st.secrets["FRED_KEY"]
@@ -71,39 +66,34 @@ except Exception as e:
     st.stop()
 
 client = genai.Client(api_key=GENAI_API_KEY)
-
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# 【UI 美化工具类 - 适配 Streamlit】
+# 【UI 工具类 - 复刻控制台风格】
 # ==========================================
-# ### CHANGED HERE ###: 重写打印函数，适配网页显示
-def print_h(msg): st.markdown(f"### ━━━ {msg} ━━━")
+def print_h(msg): st.text(f"\n━━━ {msg} ━━━") 
 def print_step(msg): st.text(f"🔹 {msg}")
-def print_ok(msg): st.success(f"✅ {msg}")
-def print_warn(msg): st.warning(f"⚠️ {msg}")
-def print_err(msg): st.error(f"❌ {msg}")
-def print_info(msg): st.info(f"ℹ️ {msg}")
-# 辅助函数：用于在类内部输出普通文本
+def print_ok(msg): st.text(f"✅ {msg}") 
+def print_warn(msg): st.text(f"⚠️ {msg}")
+def print_err(msg): st.text(f"❌ {msg}")
+def print_info(msg): st.text(f"ℹ️ {msg}")
 def log_text(msg): st.text(msg)
 
 # ==========================================
-# 【WebScraper: 纯净 Firecrawl 版】
+# 【WebScraper】
 # ==========================================
 class WebScraper:
     def __init__(self):
         self.session = requests.Session()
-        self.firecrawl_key = FIRECRAWL_KEY ### CHANGED HERE ###
+        self.firecrawl_key = FIRECRAWL_KEY
         self.app = Firecrawl(api_key=self.firecrawl_key)
         self.fred_key = USER_FRED_KEY
         self.cached_gdp = None 
 
-    # --- 1. Shiller PE ---
     def fetch_shiller_pe(self):
         print_step("[Shiller PE] 启动 Firecrawl 抓取 (Multpl)...")
-        url = "https://www.multpl.com/shiller-pe"
         try:
-            response = self.app.scrape(url, formats=['markdown'])
+            response = self.app.scrape("https://www.multpl.com/shiller-pe", formats=['markdown'])
             md = getattr(response, 'markdown', '')
             if md:
                 match = re.search(r'Shiller PE Ratio.*?(\d{2}\.\d{1,2})', md, re.S | re.I)
@@ -111,11 +101,9 @@ class WebScraper:
                     val = float(match.group(1))
                     print_ok(f"AI 识别成功! Shiller PE: {val}")
                     return val
-        except Exception as e:
-            print_err(f"Shiller PE 抓取异常: {e}")
+        except Exception as e: print_err(f"Shiller PE 抓取异常: {e}")
         return None
 
-    # --- 2. Fear & Greed ---
     def fetch_fear_greed(self):
         print_step("[Fear & Greed] 方案 A: 调用 Python 库 (fear_and_greed)...")
         try:
@@ -126,26 +114,21 @@ class WebScraper:
             if isinstance(rating, str): rating = rating.capitalize()
             print_ok(f"[Fear & Greed] Python 库调用成功: {score} ({rating})")
             return score, rating
-        except Exception:
+        except:
             print_warn("Python 库调用出错，切换至 API 直连...")
 
         print_step("[Fear & Greed] 方案 B: 启动 API 直连模式...")
-        api_url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata"
-        headers = {"User-Agent": "Mozilla/5.0"}
         try:
-            r = requests.get(api_url, headers=headers, timeout=20)
+            r = requests.get("https://production.dataviz.cnn.io/index/fearandgreed/graphdata", headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
             if r.status_code == 200:
                 data = r.json()
-                if 'fear_and_greed' in data and 'score' in data['fear_and_greed']:
-                    score = int(data['fear_and_greed']['score'])
-                    rating = data['fear_and_greed']['rating']
-                    print_ok(f"[Fear & Greed] API 直连成功: {score} ({rating})")
-                    return score, rating
-        except Exception as e:
-            print_err(f"F&G 获取失败: {e}")
+                score = int(data['fear_and_greed']['score'])
+                rating = data['fear_and_greed']['rating']
+                print_ok(f"[Fear & Greed] API 直连成功: {score} ({rating})")
+                return score, rating
+        except Exception as e: print_err(f"F&G 获取失败: {e}")
         return None, "获取失败"
 
-    # --- 4. GDP ---
     def fetch_us_gdp(self):
         if self.cached_gdp: return self.cached_gdp
         print_h("[US GDP] 启动数据获取 (FRED API 直连)...")
@@ -154,359 +137,181 @@ class WebScraper:
             gdp_series = fred.get_series('GDP', sort_order='desc', limit=1)
             if not gdp_series.empty:
                 val = gdp_series.iloc[0] 
-                gdp_trillion = val / 1000.0
+                self.cached_gdp = val / 1000.0
                 date_str = gdp_series.index[0].strftime('%Y-%m-%d')
-                print_ok(f"[US GDP] 成功: {gdp_trillion:.3f}T (日期: {date_str})")
-                self.cached_gdp = gdp_trillion 
-                return gdp_trillion
-        except Exception as e:
-            print_err(f"FRED GDP 获取异常: {e}")
+                print_ok(f"[US GDP] 成功: {self.cached_gdp:.3f}T (日期: {date_str})")
+                return self.cached_gdp
+        except Exception as e: print_err(f"FRED GDP 获取异常: {e}")
         return None
 
-    # --- 3. Buffett Indicator ---
     def fetch_buffett_indicator(self):
         print_step("[Buffett Indicator] 启动计算模式 (Market Cap / GDP)...")
         gdp_tril = self.fetch_us_gdp()
         if not gdp_tril: return None
         try:
-            w5000 = yf.Ticker("^W5000")
-            hist = w5000.history(period="5d")
-            if not hist.empty:
-                market_cap_proxy = hist['Close'].iloc[-1] 
-                gdp_billions = gdp_tril * 1000.0          
-                ratio = (market_cap_proxy / gdp_billions) * 100
+            w5000 = yf.Ticker("^W5000").history(period="5d")
+            if not w5000.empty:
+                ratio = (w5000['Close'].iloc[-1] / (gdp_tril * 1000.0)) * 100
                 print_ok(f"[巴菲特指标] 计算成功: {ratio:.2f}%")
                 return ratio
-        except Exception as e:
-             print_err(f"Buffett Indicator 计算异常: {e}")
+        except: pass
         return None
 
-    # --- 5. Margin Debt ---
     def fetch_margin_debt(self):
         print_h("[Margin Debt] 启动 Firecrawl 抓取 (FINRA)...")
-        url = "https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics"
         gdp_val = self.fetch_us_gdp()
         try:
-            response = self.app.scrape(url, formats=['markdown'])
+            response = self.app.scrape("https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics", formats=['markdown'])
             md = getattr(response, 'markdown', '')
             if md:
                 matches = re.findall(r'([A-Z][a-z]{2}-\d{2})\s*\|\s*([\d,]+)', md, re.S | re.I)
-                if matches and len(matches) > 0:
-                    latest_date, latest_val_str = matches[0]
-                    absolute_debt_trillion = float(latest_val_str.replace(',', '')) / 1_000_000
-                    gdp_ratio = None
-                    if gdp_val: gdp_ratio = (absolute_debt_trillion / gdp_val) * 100
-                    
+                if matches:
+                    latest_val = float(matches[0][1].replace(',', '')) / 1_000_000
+                    gdp_ratio = (latest_val / gdp_val * 100) if gdp_val else None
                     yoy_val = None
-                    if len(matches) >= 13: 
-                        prev_val = float(matches[12][1].replace(',', ''))
-                        current_val = float(latest_val_str.replace(',', ''))
-                        yoy_val = ((current_val - prev_val) / prev_val) * 100
-                    
-                    print_ok(f"Margin数据: {absolute_debt_trillion:.3f}T, GDP比: {gdp_ratio if gdp_ratio else 0:.2f}%")
-                    return yoy_val, absolute_debt_trillion, gdp_ratio
-        except Exception as e:
-            print_err(f"Margin Debt 抓取异常: {e}")
+                    if len(matches) >= 13:
+                        prev = float(matches[12][1].replace(',', ''))
+                        curr = float(matches[0][1].replace(',', ''))
+                        yoy_val = ((curr - prev) / prev) * 100
+                    print_ok(f"Margin数据: {latest_val:.3f}T, GDP比: {gdp_ratio if gdp_ratio else 0:.2f}%")
+                    return yoy_val, latest_val, gdp_ratio
+        except Exception as e: print_err(f"Margin Debt 异常: {e}")
         return None, None, None
 
-    # --- 6. Sahm Rule ---
     def fetch_sahm_rule(self):
         print_step("[Sahm Rule] 启动 Firecrawl 抓取 (FRED)...")
-        url = "https://fred.stlouisfed.org/series/SAHMREALTIME"
         try:
-            response = self.app.scrape(url, formats=['markdown'])
-            md = getattr(response, 'markdown', '')
-            if md:
-                match = re.search(r'([A-Z][a-z]{2}\s+\d{4}):\s*([\d\.]+)', md, re.S | re.I)
-                if match:
-                    val = float(match.group(2))
-                    print_ok(f"[Sahm Rule] 抓取成功: {val}%")
-                    return val
-        except Exception as e:
-            print_err(f"Sahm Rule 抓取异常: {e}")
+            r = self.app.scrape("https://fred.stlouisfed.org/series/SAHMREALTIME", formats=['markdown'])
+            m = re.search(r'([A-Z][a-z]{2}\s+\d{4}):\s*([\d\.]+)', getattr(r, 'markdown', ''), re.S|re.I)
+            if m: 
+                val = float(m.group(2))
+                print_ok(f"[Sahm Rule] 抓取成功: {val}%")
+                return val
+        except: pass
         return None
 
-    # --- 7. LEI (Hybrid Vision - Smart Restore) ---
     def fetch_lei(self):
         print_h("[LEI 3Ds] 启动混合视觉模式 (Firecrawl + Gemini)...")
-        depth, diffusion = None, None
-        url = "https://www.conference-board.org/topics/us-leading-indicators"
         try:
             print_step("正在解析页面结构 (寻找 Summary Table 图片)...")
-            response = self.app.scrape(url, formats=['markdown'])
-            md = getattr(response, 'markdown', '')
+            r = self.app.scrape("https://www.conference-board.org/topics/us-leading-indicators", formats=['markdown'])
+            md = getattr(r, 'markdown', '')
             img_url = None
-            
             if md:
-                # [Smart Restore] 智能锚点定位
-                anchor_idx = md.find("Summary Table")
-                if anchor_idx == -1: anchor_idx = md.find("Composite Economic Indexes")
-                
-                if anchor_idx != -1:
-                    # 只看锚点附近 1500 字符
-                    snippet = md[anchor_idx : anchor_idx + 1500]
-                    # 寻找图片链接
-                    img_match = re.search(r'\((https://.*?lei.*?\.png)\)', snippet, re.I)
-                    if img_match:
-                        img_url = img_match.group(1)
+                anchor = md.find("Summary Table")
+                if anchor == -1: anchor = md.find("Composite Economic Indexes")
+                if anchor != -1:
+                    m = re.search(r'\((https://.*?lei.*?\.png)\)', md[anchor:anchor+1500], re.I)
+                    if m: 
+                        img_url = m.group(1)
                         print_ok(f"定位到数据图片: {img_url.split('/')[-1]}")
-                
-                # 兜底: 如果锚点没找到，才使用全局搜索
-                if not img_url:
-                    all_imgs = re.findall(r'\((https://.*?lei.*?\.png)\)', md, re.I)
-                    if all_imgs: 
-                        img_url = all_imgs[0]
-                        print_warn(f"锚点未命中，使用首张 LEI 图片: {img_url}")
-
+            
             if img_url:
                 print_step("下载图片并进行 AI 分析...")
-                img_resp = requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                if img_resp.status_code == 200:
-                    img_data = Image.open(io.BytesIO(img_resp.content))
-                    prompt = """
-                    Analyze this LEI Summary Table image.
-                    Extract two values:
-                    1. "6-Month % Change" (last column, e.g., -2.1). Key: "depth"
-                    2. "Diffusion" (value 0-100, e.g., 35.0). Key: "diffusion"
-                    Return ONLY JSON. Example: {"depth": -2.1, "diffusion": 35.0}
-                    """
-                    ai_resp = client.models.generate_content(
-                        model='gemini-2.0-flash',
-                        contents=[prompt, img_data]
-                    )
-                    
-                    # [Fix] 增加防呆检查，防止 'NoneType' crash
-                    if ai_resp and ai_resp.text:
-                        json_match = re.search(r'\{.*\}', ai_resp.text, re.DOTALL)
-                        if json_match:
-                            js = json.loads(json_match.group(0))
-                            depth = js.get('depth')
-                            diffusion = js.get('diffusion')
-                            if depth is not None:
-                                print_ok(f"Gemini 视觉读取成功: Depth={depth}%, Diffusion={diffusion}")
-                                return float(depth), float(diffusion)
-                        else:
-                            print_err(f"AI 返回非 JSON 格式: {ai_resp.text[:50]}...")
-                    else:
-                        print_err("AI 响应为空")
-
-        except Exception as e:
-            print_err(f"LEI 流程异常: {e}")
+                img_bytes = requests.get(img_url, headers={"User-Agent":"Mozilla/5.0"}).content
+                prompt = 'Extract "6-Month % Change" (key: depth) and "Diffusion" (key: diffusion) from LEI table. Return JSON: {"depth": -2.1, "diffusion": 35.0}'
+                resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, Image.open(io.BytesIO(img_bytes))])
+                if resp.text:
+                    js = json.loads(re.search(r'\{.*\}', resp.text, re.DOTALL).group(0))
+                    print_ok(f"Gemini 视觉读取成功: Depth={js['depth']}%, Diffusion={js['diffusion']}")
+                    return float(js['depth']), float(js['diffusion'])
+        except Exception as e: print_err(f"LEI 异常: {e}")
         return None, None
 
-     # --- 8. HO Internals (Firecrawl + Gemini + 强力 Prompt) ---
     def fetch_nyse_internals_robust(self):
         print_step("启动 Firecrawl 访问 WSJ (PCR 模式)...")
-        nyse_data = None
-        nasdaq_data = None
-        
-        target_url = "https://www.wsj.com/market-data/stocks/marketsdiary"
-        headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-        # 请求 markdown 和 screenshot
-        payload = {"url": target_url, "formats": ["markdown", "screenshot"], "waitFor": 12000, "mobile": False}
-        
         try:
             print_step("发送 API 请求 (获取云端 Markdown + 截图)...")
-            response = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=90)
-            
-            if response.status_code == 200:
-                data = response.json()
+            payload = {"url": "https://www.wsj.com/market-data/stocks/marketsdiary", "formats": ["markdown", "screenshot"], "waitFor": 12000}
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers={"Authorization": f"Bearer {self.firecrawl_key}"}, json=payload, timeout=90)
+            if r.status_code == 200:
+                data = r.json()
                 md = data.get('data', {}).get('markdown', '')
-                scr_url = data.get('data', {}).get('screenshot', '')
-                
-                # --- 1. Markdown 文本分析 (Prompt 强化) ---
                 if md:
                     print_step("正在进行 Markdown 结构化分析 (Gemini)...")
-                    # 【强制 Prompt】
                     prompt = f"""
-                    Analyze the Markdown content scraped from WSJ Market Diary.
-                    
-                    MISSION:
-                    Extract Market Breadth data for "NYSE" and "NASDAQ".
-                    
-                    CRITICAL RULES:
-                    1. Ignore "Weekly" or "Week Ago" columns. I ONLY want "Latest Close" / DAILY data.
-                    2. Look for "Advances", "Declines", "Unchanged", "New Highs", "New Lows".
-                    3. For Volume ("Adv. Volume", "Decl. Volume"):
-                       **IMPORTANT**: The table has two sections. You MUST extract data from the "Composite Trading" section (usually at the bottom), NOT the "Trading Activity" section.
-                       The correct Volume numbers should be in the BILLIONS (e.g., 3,000,000,000+), whereas the wrong ones are in millions.
-                    
-                    RETURN JSON FORMAT:
-                    {{
-                      "NYSE": {{ "adv": 1234, "dec": 567, "unch": 89, "high": 50, "low": 10, "adv_vol": 3000000000, "dec_vol": 2000000000 }},
-                      "NASDAQ": {{ "adv": 2345, "dec": 678, ... }}
-                    }}
-                    
-                    MARKDOWN CONTENT:
-                    {md[:28000]} 
+                    Extract NYSE & NASDAQ daily breadth data from markdown.
+                    Ignore Weekly. For Volume, use 'Composite Trading' (Billions).
+                    Return JSON: {{ "NYSE": {{ "adv": 1, "dec": 1, "unch": 1, "high": 1, "low": 1, "adv_vol": 1000, "dec_vol": 1000 }}, "NASDAQ": {{ "adv": 1, "dec": 1 }} }}
+                    Markdown: {md[:28000]}
                     """
-                    
-                    try:
-                        ai_resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt])
-                        if ai_resp and ai_resp.text:
-                            clean_text = re.sub(r'```json|```', '', ai_resp.text).strip()
-                            result = json.loads(re.search(r'\{.*\}', clean_text, re.DOTALL).group(0))
-                            nyse_data = result.get('NYSE')
-                            nasdaq_data = result.get('NASDAQ')
-                            if nyse_data: print_ok(f"WSJ Text 分析成功: {nyse_data}")
-                    except Exception as e:
-                        print_warn(f"WSJ Text 分析微恙: {e}")
+                    resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt])
+                    if resp.text:
+                        js = json.loads(re.search(r'\{.*\}', resp.text, re.DOTALL).group(0))
+                        self.cached_nasdaq = js.get('NASDAQ')
+                        print_ok(f"WSJ Text 分析成功: {js.get('NYSE')}")
+                        return js.get('NYSE')
+        except Exception as e: print_err(f"WSJ 异常: {e}")
+        return None
 
-                # --- 2. Vision 视觉兜底 ---
-                if not nyse_data and scr_url:
-                    print_step("启用 Vision 视觉补救 (Gemini)...")
-                    try:
-                        img_bytes = requests.get(scr_url, timeout=30).content
-                        img = Image.open(io.BytesIO(img_bytes))
-                        prompt_v = "Analyze image. Extract Daily data for NYSE & NASDAQ. Ignore Weekly. For Volume, use the larger 'Composite' numbers (Billions). Return JSON."
-                        ai_resp_v = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt_v, img])
-                        if ai_resp_v.text:
-                            res_v = json.loads(re.search(r'\{.*\}', ai_resp_v.text, re.DOTALL).group(0))
-                            nyse_data = res_v.get('NYSE')
-                            nasdaq_data = res_v.get('NASDAQ')
-                            print_ok("WSJ Vision 补救成功")
-                    except: pass
-            
-            if nasdaq_data:
-                self.cached_nasdaq = nasdaq_data
-
-        except Exception as e:
-            print_err(f"WSJ Firecrawl 异常: {e}")
-        
-        return nyse_data
-
-    # --- 8.5 [重构] NYMO Vision Fetch (StockCharts Source) ---
     def fetch_nymo_vision(self):
         print_step("启动 Firecrawl 视觉抓取 StockCharts ($NYMO)...")
-        target_url = "https://stockcharts.com/h-sc/ui?s=$NYMO"
-        nymo_val = None
-        
-        headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-        # StockCharts 加载需要时间，等待 8秒 以确保图表和图例渲染完成
-        payload = {"url": target_url, "formats": ["screenshot"], "waitFor": 8000, "mobile": False}
-        
         try:
             print_step("请求云端截图...")
-            resp = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                scr_url = data.get('data', {}).get('screenshot', '')
-                
-                if scr_url:
+            payload = {"url": "https://stockcharts.com/h-sc/ui?s=$NYMO", "formats": ["screenshot"], "waitFor": 8000}
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers={"Authorization": f"Bearer {self.firecrawl_key}"}, json=payload, timeout=60)
+            if r.status_code == 200:
+                scr = r.json().get('data', {}).get('screenshot')
+                if scr:
                     print_step("截图获取成功，正在进行 AI 读数...")
-                    try:
-                        img_bytes = requests.get(scr_url, timeout=30).content
-                        img = Image.open(io.BytesIO(img_bytes))
-                        
-                        prompt = """
-                        Analyze this StockCharts image for "$NYMO".
-                        Locate the data legend (usually top left).
-                        Extract the value labeled "Last", "Close", or the final number in the OHLC sequence.
-                        The value can be negative (e.g., -15.40).
-                        Return ONLY JSON: {"value": -12.34}
-                        """
-                        
-                        ai_resp = client.models.generate_content(
-                            model='gemini-2.0-flash',
-                            contents=[prompt, img]
-                        )
-                        
-                        if ai_resp.text:
-                            clean_text = re.sub(r'```json|```', '', ai_resp.text).strip()
-                            match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-                            if match:
-                                val = json.loads(match.group(0)).get('value')
-                                if val is not None:
-                                    nymo_val = float(val)
-                                    print_ok(f"StockCharts ($NYMO) 视觉提取成功: {nymo_val}")
-                                    return nymo_val
-                    except Exception as e:
-                        print_err(f"AI 视觉识别失败: {e}")
-            else:
-                print_err(f"Firecrawl 请求失败: {resp.status_code}")
+                    prompt = 'Extract the last value for $NYMO from the legend. Return JSON: {"value": -12.34}'
+                    resp = client.models.generate_content(model='gemini-2.0-flash', contents=[prompt, Image.open(io.BytesIO(requests.get(scr).content))])
+                    if resp.text:
+                        val = json.loads(re.search(r'\{.*\}', resp.text, re.DOTALL).group(0)).get('value')
+                        if val: 
+                            print_ok(f"StockCharts ($NYMO) 视觉提取成功: {val}")
+                            return float(val)
+        except: pass
+        return None
 
-        except Exception as e:
-            print_err(f"NYMO 抓取流程异常: {e}")
-            
-        return nymo_val
-
-    # --- 8.6 [升级] MCO 双重抓取 ---
     def fetch_dual_mco(self):
         print_step("[MCO] 启动官方源 + NYMO 双重抓取...")
-        mco_official = None
-        nymo_ratio = None
+        mco = None
         try:
-            url_off = "https://www.mcoscillator.com/"
-            resp = self.app.scrape(url_off, formats=['markdown'])
-            md = getattr(resp, 'markdown', '')
-            if md:
-                match = re.search(r'McC\s*OSC\s*\|?\s*([-\d\.]+)', md, re.I)
-                if match:
-                    mco_official = float(match.group(1))
-                    print_ok(f"[MCO] 官方源抓取成功: {mco_official}")
-        except Exception as e:
-            print_err(f"MCO 官方源异常: {e}")
-        
-        # 使用新的 StockCharts 抓取函数
-        nymo_ratio = self.fetch_nymo_vision()
-        return mco_official, nymo_ratio
+            r = self.app.scrape("https://www.mcoscillator.com/", formats=['markdown'])
+            m = re.search(r'McC\s*OSC\s*\|?\s*([-\d\.]+)', getattr(r, 'markdown', ''), re.I)
+            if m: 
+                mco = float(m.group(1))
+                print_ok(f"[MCO] 官方源抓取成功: {mco}")
+        except: pass
+        return mco, self.fetch_nymo_vision()
 
-    # --- [重构] TradingView 市场宽度 (直接复用 WSJ 数据) ---
     def fetch_tv_breadth_vision(self):
         print_h("[TradingView 替代方案] 复用 WSJ NASDAQ 数据 (更稳更准)...")
         if hasattr(self, 'cached_nasdaq') and self.cached_nasdaq:
-            def clean(v):
-                if isinstance(v, str): 
-                    v = v.replace(',', '')
-                    if 'K' in v: v = float(v.replace('K','')) * 1000
-                    return int(float(v))
-                return v
-            adv = clean(self.cached_nasdaq.get('adv'))
-            dec = clean(self.cached_nasdaq.get('dec'))
-            if adv and dec:
-                print_ok(f"WSJ NASDAQ 数据复用成功: Adv={adv}, Dec={dec}")
-                return adv, dec
-        print_warn("WSJ NASDAQ 数据缺失，跳过广度显示。")
+            def c(v): return int(float(str(v).replace(',','').replace('K','')) * (1000 if 'K' in str(v) else 1))
+            adv = c(self.cached_nasdaq.get('adv'))
+            dec = c(self.cached_nasdaq.get('dec'))
+            print_ok(f"WSJ NASDAQ 数据复用成功: Adv={adv}, Dec={dec}")
+            return adv, dec
         return None, None
 
-    # --- 15. CBOE Put/Call Ratio [保持 PCR 模块不变] ---
     def fetch_pcr_robust(self):
         print_h("[PCR] 启动直连 API 抓取 (MacroMicro)...")
-        target_url = "https://en.macromicro.me/charts/449/us-cboe-options-put-call-ratio"
-        headers = {"Authorization": f"Bearer {self.firecrawl_key}", "Content-Type": "application/json"}
-        payload = {"url": target_url, "formats": ["markdown", "screenshot"], "waitFor": 15000, "mobile": True}
         try:
             print_step("发送 API 请求 (Text + Vision)...")
-            response = requests.post("https://api.firecrawl.dev/v1/scrape", headers=headers, json=payload, timeout=60)
-            if response.status_code == 200:
-                data = response.json()
-                md = data.get('data', {}).get('markdown', '')
-                if md:
-                    pattern = r'(20\d{2}-\d{2}-\d{2})(?:[^0-9]{0,200})\s*(\d{1,2}\.\d{2})'
-                    matches = re.findall(pattern, md, re.DOTALL)
-                    if matches:
-                        matches.sort(key=lambda x: x[0], reverse=True)
-                        val = float(matches[0][1])
-                        print_ok(f"PCR 抓取成功: {val}")
-                        return val, val
-        except Exception as e:
-            print_err(f"PCR 抓取异常: {e}")
+            payload = {"url": "https://en.macromicro.me/charts/449/us-cboe-options-put-call-ratio", "formats": ["markdown"], "waitFor": 10000}
+            r = requests.post("https://api.firecrawl.dev/v1/scrape", headers={"Authorization": f"Bearer {self.firecrawl_key}"}, json=payload, timeout=60)
+            md = r.json().get('data', {}).get('markdown', '')
+            if md:
+                m = re.findall(r'(20\d{2}-\d{2}-\d{2}).*?(\d{1,2}\.\d{2})', md, re.DOTALL)
+                if m: 
+                    m.sort(key=lambda x:x[0], reverse=True)
+                    val = float(m[0][1])
+                    print_ok(f"PCR 抓取成功: {val}")
+                    return val, val
+        except: pass
         return None, None
 
-    # --- 16. NFCI ---
     def fetch_nfci(self):
+        print_h("芝加哥金融状况指数 (NFCI)")
         print_step("[NFCI] 启动 FRED API 获取 (替代旧版)...")
         try:
-            fred = Fred(api_key=self.fred_key)
-            s = fred.get_series('NFCI', observation_start=datetime.now() - timedelta(weeks=4))
-            if s.empty: return None
-            val = s.iloc[-1]
+            f = Fred(api_key=self.fred_key)
+            val = f.get_series('NFCI', sort_order='desc', limit=1).iloc[0]
             print_ok(f"[NFCI] FRED数据获取成功: {val:.4f}")
-            return float(val)
-        except Exception as e:
-            print_err(f"NFCI 获取失败: {e}")
-            return None
+            return val
+        except: return None
 
 # ==========================================
 # 【核心程序】
@@ -514,16 +319,8 @@ class WebScraper:
 class CrashWarningSystem:
     def __init__(self):
         self.scraper = WebScraper()
-        # self.setup_fonts() ### CHANGED HERE ###: 字体已在全局加载
-        self.colors = {
-            'bg': '#4B535C', 'table_header': '#3E4953', 
-            'row_safe': '#2E8B57', 'text_safe': '#FFFFFF', 
-            'row_warn': '#8B0000', 'text_warn': '#FFFFFF', 
-            'row_risk': '#B8860B', 'text_risk': '#FFFFFF', 
-            'title': '#FFEE88', 'edge': '#606972'
-        }
+        self.colors = {'bg': '#4B535C', 'table_header': '#3E4953', 'row_safe': '#2E8B57', 'text_safe': '#FFFFFF', 'row_warn': '#8B0000', 'text_warn': '#FFFFFF', 'row_risk': '#B8860B', 'text_risk': '#FFFFFF', 'title': '#FFEE88', 'edge': '#606972'}
         self.shared_wsj_data = None
-        self.shared_breadth_200 = None
 
     def get_tickers(self):
         print_step("获取标普500成分股名单...")
@@ -544,13 +341,14 @@ class CrashWarningSystem:
         for i in range(0, len(tickers), 80):
             batch = tickers[i:i+80]
             try:
-                data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=True, timeout=30)
+                # ### CHANGED HERE ###: 禁用多线程 (threads=False) 以防止 Streamlit Cloud 崩溃
+                data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=False, timeout=30)
                 if isinstance(data.columns, pd.MultiIndex):
                     try: close = data['Close']
                     except: close = data
                 else: close = data
                 closes.append(close)
-                log_text(f"   进度: {min(i+80, len(tickers))}/{len(tickers)}") ### CHANGED HERE ###
+                log_text(f"   进度: {min(i+80, len(tickers))}/{len(tickers)}")
             except: pass
         if not closes: return pd.DataFrame()
         return pd.concat(closes, axis=1).dropna(axis=1, how='all')
@@ -569,7 +367,6 @@ class CrashWarningSystem:
             sma200 = full_data.rolling(200).mean().iloc[-1]
             valid200 = last_close.notna() & sma200.notna()
             pct200 = (last_close[valid200] > sma200[valid200]).mean() * 100
-            self.shared_breadth_200 = pct200
             
             print_ok(f"市场广度计算完成: >50MA={pct50:.1f}%, >20MA={pct20:.1f}%, >200MA={pct200:.1f}%")
             return pct50, pct20
@@ -578,8 +375,9 @@ class CrashWarningSystem:
             return None, None
 
     def analyze_market_trends_console(self):
-        st.markdown("---") ### CHANGED HERE ###
-        print_h(f" \U0001f3e6 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.text("\n===========================================================================")
+        st.text(f" 🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.text("===========================================================================")
         
         try:
             fred = Fred(api_key=USER_FRED_KEY)
@@ -616,7 +414,8 @@ class CrashWarningSystem:
 
         try:
             print_step("分析市场广度 (RSP vs SPY 20日趋势)...")
-            df = yf.download(['SPY', 'RSP'], period="3mo", progress=False)['Close']
+            # ### CHANGED HERE ###: 禁用多线程
+            df = yf.download(['SPY', 'RSP'], period="3mo", progress=False, threads=False)['Close']
             if not df.empty:
                 ratio = df['RSP'] / df['SPY']
                 curr_ratio = ratio.iloc[-1]
@@ -640,7 +439,7 @@ class CrashWarningSystem:
             nh_val = f"{val:.0f}"
             nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
         log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
-        st.markdown("---") ### CHANGED HERE ###
+        st.text("===========================================================================")
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -679,7 +478,7 @@ class CrashWarningSystem:
                 pos_desc = "逼近52周新高" if dist_high > -2 else "区间震荡"
                 pos_str = f"距52周高: {dist_high:.1f}% | {pos_desc}"
                 print_h("【简单结论】标普500趋势")
-                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); log_text("-" * 30)
+                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.text("------------------------------")
         except: return [], []
 
         print_h("启动宏观指标动态抓取 (Firecrawl)")
@@ -730,7 +529,7 @@ class CrashWarningSystem:
                 log_text(f"2. TRIN = {trin_val:.2f}")
                 
                 # --- 控制台深度输出 ---
-                st.markdown("---") ### CHANGED HERE ###
+                st.text("\n----------------------------------------")
                 log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
                 log_text(f"   当前读数: {trin_val:.2f}")
                 
@@ -792,7 +591,7 @@ class CrashWarningSystem:
                     log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
                 log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
-                st.markdown("---") ### CHANGED HERE ###
+                st.text("----------------------------------------")
 
             else: 
                 log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
@@ -1064,7 +863,7 @@ class CrashWarningSystem:
             print_h("【简单结论】NYMO 广度")
             log_text(f"  当前读数: {real_nymo}")
             log_text(f"  区域判断: {nymo_desc}")
-            log_text("-" * 30)
+            st.text("------------------------------")
         
         nymo_data = ["StockCharts 广度 ($NYMO)", nymo_stat, nymo_txt, "极值: <-60恐慌底 / >+60过热顶\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"]
         
@@ -1172,6 +971,7 @@ class CrashWarningSystem:
 
         # ### CHANGED HERE ###: Streamlit 直接显示图片，不保存文件
         st.pyplot(fig)
+        print_ok(f"报表已生成: (网页显示)") # ### CHANGED HERE ###
 
 # ==============================================================================
 # 模块：板块轮动引擎 (Fix: 白底 + 汉字乱码修复 + 大白话坐标 + 10日爆发)
@@ -1188,15 +988,18 @@ class SectorRotationEngine:
         self.mom_window = 10 
 
     def run_analysis(self):
-        st.markdown("---") ### CHANGED HERE ###
-        print_h(f" \U0001f504 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
+        # ### CHANGED HERE ###: 100% 复刻 output.txt 的 Sector 头部
+        st.text("\n===========================================================================")
+        st.text(f" 🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.text("===========================================================================")
         
         try:
             tickers = list(self.sectors.keys())
             start_date = (datetime.now() - timedelta(days=300)).strftime('%Y-%m-%d')
             print_step(f"下载 11 个板块数据 ({start_date} ~ Now)...")
             
-            raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False)
+            # ### CHANGED HERE ###: 禁用多线程 (threads=False)
+            raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False, threads=False)
             
             if raw_data.empty:
                 print_err("数据下载失败，跳过板块轮动分析。")
@@ -1305,7 +1108,7 @@ class SectorRotationEngine:
         })
 
     def _print_console_summary(self, df, movers):
-        log_text("\n\U0001f4ca [RRG 象限分布] - 研报版") 
+        log_text("\n📊 [RRG 象限分布] - 研报版") 
         for q in ["Leading (领涨)", "Improving (改善)", "Weakening (转弱)", "Lagging (落后)"]:
             items = df[df['Quadrant'] == q]
             if not items.empty:
@@ -1313,13 +1116,13 @@ class SectorRotationEngine:
                 icon = "\U0001f7e2" if "Leading" in q else ("\U0001f535" if "Improving" in q else ("\U0001f7e1" if "Weakening" in q else "\U0001f534")) 
                 log_text(f"   {icon} {q}: {ticks}")
         
-        log_text("\n\U0001f680 [10日 资金抢筹榜] (短期爆发力)") 
+        log_text("\n🚀 [10日 资金抢筹榜] (短期爆发力)") 
         if movers:
             for m in movers:
                 log_text(f"   \U0001f525 {m['Name']}: 跑赢大盘 {m['Alpha_10d']:.2f}%") 
         else:
             log_text("   (近期无明显异动板块)")
-        st.markdown("---") ### CHANGED HERE ###
+        st.text("===========================================================================") # ### CHANGED HERE ###
 
     def _generate_summary_text(self, df, movers):
         leaders = df[df['Quadrant'] == "Leading (领涨)"]['Name'].tolist()
@@ -1334,8 +1137,10 @@ class SectorRotationEngine:
 # 【附加功能：FRED 收益率曲线/失业率红绿灯】
 # ==========================================
 def run_fred_traffic_light(fred_key):
-    st.markdown("---") ### CHANGED HERE ###
-    print_h("\U0001f6a6 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
+    # ### CHANGED HERE ###: 100% 复刻 output.txt 的 FRED Traffic Light 头部
+    st.text("\n==================================================")
+    st.text("🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
+    st.text("==================================================")
     
     def get_valid_fred_data(series_id, count=1):
         url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={fred_key}&file_type=json&sort_order=desc&limit=10"
@@ -1374,7 +1179,7 @@ def run_fred_traffic_light(fred_key):
         log_text(f"数据源: St. Louis Fed (API Key已验证)")
         log_text(f"1. 10Y-2Y 利差 (T10Y2Y): {val_curve:+.2f}%  (日期: {date_curve})")
         log_text(f"2. 失业率 (UNRATE)     : {val_unrate}%  (日期: {date_unrate}) [前值: {prev_unrate}%]")
-        log_text("-" * 50)
+        st.text("--------------------------------------------------") # ### CHANGED HERE ###
 
         signal = ""
         advice = ""
@@ -1399,7 +1204,7 @@ def run_fred_traffic_light(fred_key):
 
         log_text(f"\U0001f6a6 信号灯状态: {signal}") 
         log_text(f"\U0001f4a1 操作建议  : {advice}") 
-        st.markdown("---") ### CHANGED HERE ###
+        st.text("==================================================") # ### CHANGED HERE ###
 
     except Exception as e:
         print_err(f"FRED API 调用失败: {e}")
@@ -1409,7 +1214,7 @@ def run_fred_traffic_light(fred_key):
 # ==========================================
 def run_fred_v10_dashboard(api_key):
     masked_key = api_key[:6] + "..." if len(api_key) > 6 else "xxxx..."
-    print_h(f"FRED 集成版 (V10.003) - 补充宏观快照")
+    st.text("\n▬ ₪  FRED 集成版 (V10.003) - 补充宏观快照  ▬") # ### CHANGED HERE ###
     print_step(f"正在连接 St. Louis Fed (Key: {masked_key})...") 
     
     try:
@@ -1433,12 +1238,12 @@ def run_fred_v10_dashboard(api_key):
     if curve_val > 0: yield_status = "\U0001f7e2 正向" 
     else: yield_status = "\U0001f534 倒挂" 
 
-    log_text("-" * 40)
-    log_text(f"\U0001f4ca 宏观与市场快照 ({current_date_str})") 
-    log_text("-" * 40)
+    st.text("\n----------------------------------------") # ### CHANGED HERE ###
+    log_text(f"📊 宏观与市场快照 ({current_date_str})") 
+    st.text("----------------------------------------") # ### CHANGED HERE ###
     log_text(f"1. 市场恐慌指数 VIX: {vix_val:.2f} ({vix_status})")
     log_text(f"2. 10Y-2Y 收益率差 : {curve_val:.2f}% ({yield_status})")
-    log_text("-" * 40)
+    st.text("----------------------------------------") # ### CHANGED HERE ###
 
 # ==========================================
 # 【NEW MODULE】SMT 背离分析引擎 (V3 Pro - 经典回归+深度解读)
@@ -1464,13 +1269,16 @@ class SMTDivergenceAnalyzer:
         self.signals = [] # 收集所有信号用于总结
 
     def run(self):
-        st.markdown("---") ### CHANGED HERE ###
-        print_h(f" \U0001f9ed 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
+        # ### CHANGED HERE ###: 100% 复刻 output.txt 的 SMT 头部
+        st.text("\n===========================================================================")
+        st.text(f" 🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
+        st.text("===========================================================================")
 
         # 1. 批量下载数据
         print_step("下载全量数据 (含期货/等权ETF)...")
         try:
-            data = yf.download(self.all_tickers, period="6mo", auto_adjust=False, progress=False)
+            # ### CHANGED HERE ###: 禁用多线程 (threads=False)
+            data = yf.download(self.all_tickers, period="6mo", auto_adjust=False, progress=False, threads=False)
             
             if isinstance(data.columns, pd.MultiIndex):
                 try: df_close = data['Close']
@@ -1485,14 +1293,14 @@ class SMTDivergenceAnalyzer:
                 return
 
             print_ok("数据获取成功，开始计算...")
-            st.markdown("---") ### CHANGED HERE ###
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
 
             # 2. 经典 SMT (恢复老版样式)
             print_h("1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
             for period in self.periods:
                 self._analyze_classic_style(df_close, period)
             
-            st.markdown("---") ### CHANGED HERE ###
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
             
             # 3. Pro SMT (增强信息量)
             print_h("2. 进阶 SMT 分析 (期货 & 市场广度)")
@@ -1500,7 +1308,7 @@ class SMTDivergenceAnalyzer:
             self._analyze_pro_futures(df_close, 10) # 10日是期货背离黄金窗口
             self._analyze_pro_breadth(df_close, 20) # 20日看广度最准
             
-            st.markdown("---") ### CHANGED HERE ###
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
 
             # 4. 关键位与入场
             self._analyze_entry_signals(df_close)
@@ -1533,9 +1341,8 @@ class SMTDivergenceAnalyzer:
             if current_prices[t] >= period_highs[t] * 0.9995: made_new_high.append(t)
             if current_prices[t] <= period_lows[t] * 1.0005: made_new_low.append(t)
             
-        # 只打印有信号的窗口，避免刷屏
-        if not made_new_high and not made_new_low:
-            return 
+        # ### CHANGED HERE ###: 移除 "if not made_new_high and not made_new_low: return" 
+        # 强制输出窗口标题，确保 5, 10, 20, 60 日信息不丢失
 
         log_text(f"[{period}日窗口]")
         
@@ -1563,6 +1370,9 @@ class SMTDivergenceAnalyzer:
         elif len(made_new_low) == len(target_tickers):
             log_text(f"   \U0001f9ca 状态: 强空头共振 (全部创新低)") 
             self.signals.append(-0.5)
+        else:
+            # ### CHANGED HERE ###: 增加兜底输出，确保无信号时也显示状态
+            log_text(f"   ⚪ 状态: 无新高/新低 (区间震荡)")
 
     # --- 风格2：Pro 期货分析 (信息更充分) ---
     def _analyze_pro_futures(self, df, period):
@@ -1701,14 +1511,14 @@ class SMTDivergenceAnalyzer:
         log_text(f"   信号强度: 多头({bull_score}) vs 空头({bear_score})")
 
     def _print_legend(self):
-        st.markdown("---") ### CHANGED HERE ###
+        st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
         log_text("【SMT Pro 策略说明书】")
         log_text("1. \U0001f525 期货先行: NQ/ES 期货包含夜盘，比ETF早 1-4 小时反应。")
         log_text("2. \u2696\ufe0f 内部广度: 若 SPY 涨但 RSP 跌 = 虚假繁荣 (看跌)。")
         log_text("3. \U0001f3af Vincent战法: SMT只是过滤器，必须配合“关键位”。")
         log_text("   - 买入公式: SMT看涨背离 + 价格回踩MA20不破。")
         log_text("   - 卖出公式: SMT看跌背离 + 价格假突破前高 (或跌破MA20)。")
-        st.markdown("---") ### CHANGED HERE ###
+        st.text("===========================================================================") # ### CHANGED HERE ###
 
 
 if __name__ == "__main__":
@@ -1747,4 +1557,4 @@ if __name__ == "__main__":
             st.error(f"程序运行出错: {e}") ### CHANGED HERE ###
             traceback.print_exc() 
         
-        st.success(">>> 计算完成。") ### CHANGED HERE ###
+        st.text("\n>>> 计算完成。按 Enter 键退出程序...") # ### CHANGED HERE ###
