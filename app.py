@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - Streamlit Cloud 稳定重构版 (UI优化 + 防崩溃修复)
-### CHANGED HERE ###: 
-1. 核心修复: 所有 yf.download 增加 threads=False 参数，防止 Streamlit Cloud 线程崩溃。
-2. UI重构: 使用 st.metric, st.dataframe, st.columns 替代纯文本输出，提升阅读体验。
+美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (SMT补全修复)
+### CHANGED HERE ###: 修复 SMT 模块 5/10/20/60 日窗口信息被隐藏的问题，强制输出所有窗口状态。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -30,11 +28,7 @@ from PIL import Image
 from matplotlib import font_manager
 
 # --- 0. Streamlit 页面配置 ---
-st.set_page_config(
-    page_title="美股崩盘预警系统 Pro", 
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="美股崩盘预警系统 Pro", layout="wide")
 
 # --- 1. 字体加载 ---
 @st.cache_resource
@@ -75,36 +69,18 @@ client = genai.Client(api_key=GENAI_API_KEY)
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# 【UI 工具类 - 适配 st.status 与原生组件】
+# 【UI 工具类 - 复刻控制台风格】
 # ==========================================
-class StatusLogger:
-    def __init__(self):
-        self.container = None
-    
-    def set_container(self, container):
-        self.container = container
-
-    def log(self, msg, level="info"):
-        if self.container:
-            if level == "step": self.container.write(f"🔹 {msg}")
-            elif level == "ok": self.container.write(f"✅ {msg}")
-            elif level == "warn": self.container.write(f"⚠️ {msg}")
-            elif level == "err": self.container.write(f"❌ {msg}")
-            elif level == "info": self.container.write(f"ℹ️ {msg}")
-
-logger = StatusLogger()
-
-# 重写打印函数，适配网页逻辑
-def print_h(msg): pass # 标题通过 UI 布局体现
-def print_step(msg): logger.log(msg, "step")
-def print_ok(msg): logger.log(msg, "ok")
-def print_warn(msg): logger.log(msg, "warn")
-def print_err(msg): logger.log(msg, "err")
-def print_info(msg): logger.log(msg, "info")
-def log_text(msg): logger.log(msg, "info") 
+def print_h(msg): st.text(f"\n━━━ {msg} ━━━") 
+def print_step(msg): st.text(f"🔹 {msg}")
+def print_ok(msg): st.text(f"✅ {msg}") 
+def print_warn(msg): st.text(f"⚠️ {msg}")
+def print_err(msg): st.text(f"❌ {msg}")
+def print_info(msg): st.text(f"ℹ️ {msg}")
+def log_text(msg): st.text(msg)
 
 # ==========================================
-# 【WebScraper】(保持逻辑不变)
+# 【WebScraper】
 # ==========================================
 class WebScraper:
     def __init__(self):
@@ -365,8 +341,7 @@ class CrashWarningSystem:
         for i in range(0, len(tickers), 80):
             batch = tickers[i:i+80]
             try:
-                # ### CHANGED HERE ###: 禁用多线程 (threads=False) 以防止 Streamlit Cloud 崩溃
-                data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=False, timeout=30)
+                data = yf.download(batch, period="5y", auto_adjust=True, progress=False, threads=True, timeout=30)
                 if isinstance(data.columns, pd.MultiIndex):
                     try: close = data['Close']
                     except: close = data
@@ -399,11 +374,9 @@ class CrashWarningSystem:
             return None, None
 
     def analyze_market_trends_console(self):
-        st.divider()
-        st.subheader(f"🏦 深度宏观预警 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}")
-        
-        # 使用列布局展示关键指标
-        col1, col2, col3, col4 = st.columns(4)
+        st.text("\n===========================================================================")
+        st.text(f" 🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.text("===========================================================================")
         
         try:
             fred = Fred(api_key=USER_FRED_KEY)
@@ -418,11 +391,12 @@ class CrashWarningSystem:
             liq_now = (v_walcl / 1000000.0) - (v_tga / 1000.0) - (v_rrp / 1000.0)
             liq_prev = (p_walcl / 1000000.0) - (p_tga / 1000.0) - (p_rrp / 1000.0)
             liq_chg = liq_now - liq_prev
+            liq_signal = "\U0001f7e2 扩张 (利好)" if liq_chg > 0 else "\U0001f534 收缩 (利空)" 
             
-            with col1:
-                st.metric("美联储净流动性", f"${liq_now:.3f}T", f"{liq_chg:+.3f}T")
-        except: 
-            with col1: st.metric("美联储净流动性", "N/A")
+            log_text(f"1. 美联储净流动性: ${liq_now:.3f}T (Trillion)")
+            log_text(f"   -> 4周变化: {liq_chg:+.3f}T ({liq_signal})")
+            log_text(f"   -> 规则: 流动性增加 = 股市燃料增加")
+        except: pass
         
         try:
             print_step("计算股权风险溢价 (Equity Risk Premium)...")
@@ -431,37 +405,39 @@ class CrashWarningSystem:
             if not shiller_pe: shiller_pe = 35.0 
             earnings_yield = (1.0 / shiller_pe) * 100
             erp = earnings_yield - dgs10
-            
-            with col2:
-                st.metric("股权风险溢价 (ERP)", f"{erp:.2f}%", help="<1.0% 极度危险, <2.5% 偏低")
+            erp_signal = "\U0001f7e2 正常" 
+            if erp < 1.0: erp_signal = "\U0001f534 极度危险 (股不如债)" 
+            elif erp < 2.5: erp_signal = "\U0001f7e0 偏低 (吸引力差)" 
+            log_text(f"2. 股权风险溢价 (ERP): {erp:.2f}%  [{erp_signal}]")
         except: pass
 
         try:
             print_step("分析市场广度 (RSP vs SPY 20日趋势)...")
-            # ### CHANGED HERE ###: 禁用多线程
-            df = yf.download(['SPY', 'RSP'], period="3mo", progress=False, threads=False)['Close']
+            df = yf.download(['SPY', 'RSP'], period="3mo", progress=False)['Close']
             if not df.empty:
                 ratio = df['RSP'] / df['SPY']
                 curr_ratio = ratio.iloc[-1]
                 ago_20_ratio = ratio.iloc[-20]
                 change_20d = ((curr_ratio - ago_20_ratio) / ago_20_ratio) * 100
-                
-                with col3:
-                    st.metric("RSP/SPY 相对强度", f"{change_20d:+.2f}%", help="20日变化率")
+                spy_trend = "上涨" if df['SPY'].iloc[-1] > df['SPY'].iloc[-20] else "下跌"
+                trend_signal = "\U0001f7e2 结构健康" 
+                if spy_trend == "上涨" and change_20d < -1.0:
+                    trend_signal = "\U0001f534 严重背离 (大票涨,小票跌)" 
+                elif change_20d < 0:
+                    trend_signal = "\U0001f7e0 跑输 (小票弱势)" 
+                log_text(f"3. RSP/SPY 相对强度 (20日): {change_20d:+.2f}%  [{trend_signal}]")
         except: pass
 
         print_step("检查市场内部结构 (WSJ & Local Calc)...")
         nh_val = "N/A"
+        nh_signal = "\u26aa 未知" 
         if self.shared_wsj_data and 'high' in self.shared_wsj_data:
             def c(v): return int(str(v).replace(',','')) if v else 0
             val = c(self.shared_wsj_data['high']) - c(self.shared_wsj_data['low'])
             nh_val = f"{val:.0f}"
-            with col4:
-                st.metric("WSJ 净新高 (Net Highs)", nh_val, delta=val)
-        else:
-            with col4: st.metric("WSJ 净新高", "N/A")
-        
-        st.divider()
+            nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
+        log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
+        st.text("===========================================================================")
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -499,8 +475,8 @@ class CrashWarningSystem:
                 dist_high = (curr_px / year_high - 1) * 100
                 pos_desc = "逼近52周新高" if dist_high > -2 else "区间震荡"
                 pos_str = f"距52周高: {dist_high:.1f}% | {pos_desc}"
-                
-                st.info(f"**标普500趋势**: 当前价格 {curr_px:.2f} | {trend_desc} | {pos_str}")
+                print_h("【简单结论】标普500趋势")
+                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.text("------------------------------")
         except: return [], []
 
         print_h("启动宏观指标动态抓取 (Firecrawl)")
@@ -536,11 +512,11 @@ class CrashWarningSystem:
             h_pct = (h_raw / total_issues) * 100 if total_issues > 0 else 0
             l_pct = (l_raw / total_issues) * 100 if total_issues > 0 else 0
             net_issues = adv - dec 
-            
-            with st.expander("📊 抛压指标计算详情 (点击展开)", expanded=False):
-                st.write(f"1. Net Issues = Adv({adv}) - Dec({dec}) = {net_issues}")
+            print_h("抛压指标计算过程 (Daily)")
+            log_text(f"1. Net Issues = Adv({adv}) - Dec({dec}) = {net_issues}")
             
             # --- [TRIN Upgrade Start] ---
+            # 升级：TRIN 深度分析 (PDF 策略植入)
             trin_val = None
             trin_stat = 0
             trin_txt = "数据不足"
@@ -548,31 +524,33 @@ class CrashWarningSystem:
             
             if dec > 0 and dec_vol > 0 and adv_vol > 0:
                 trin_val = (adv / dec) / (adv_vol / dec_vol)
+                log_text(f"2. TRIN = {trin_val:.2f}")
                 
-                st.markdown("#### 【TRIN 指标深度分析】")
-                col_trin1, col_trin2 = st.columns([1, 3])
-                with col_trin1:
-                    st.metric("TRIN Index", f"{trin_val:.2f}")
+                # --- 控制台深度输出 ---
+                st.text("\n----------------------------------------")
+                log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
+                log_text(f"   当前读数: {trin_val:.2f}")
                 
+                # 1. 区间判断
                 status_desc = ""
                 if trin_val < 0.5:
                     status_desc = f"极度强势/严重超买 (<0.5) -> 警惕顶部"
-                    trin_stat = 2 
+                    trin_stat = 2 # 红色警告: 见顶风险
                     trin_txt = f"TRIN: {trin_val:.2f}\n极度超买 (<0.5)"
                     trin_logic_short = "极度贪婪 (<0.5)\n见顶风险极高"
                 elif 0.5 <= trin_val <= 0.8:
                     status_desc = f"强势/买方主导 (0.5-0.8) -> 健康上涨"
-                    trin_stat = 0 
+                    trin_stat = 0 # 安全
                     trin_txt = f"TRIN: {trin_val:.2f}\n强势买方 (0.5-0.8)"
                     trin_logic_short = "多头占优\n趋势健康"
                 elif 0.8 < trin_val <= 1.2:
                     status_desc = f"中性/平衡 (0.8-1.2) -> 观望/跟随"
-                    trin_stat = 0 
+                    trin_stat = 0 # 安全
                     trin_txt = f"TRIN: {trin_val:.2f}\n多空平衡 (0.8-1.2)"
                     trin_logic_short = "无明显方向\n跟随趋势"
                 elif 1.2 < trin_val <= 2.0:
                     status_desc = f"弱势/卖压显现 (1.2-2.0) -> 谨慎减仓"
-                    trin_stat = 1 
+                    trin_stat = 1 # 预警
                     trin_txt = f"TRIN: {trin_val:.2f}\n卖压显现 (1.2-2.0)"
                     trin_logic_short = "空头稍强\n注意下行风险"
                 elif trin_val > 2.0:
@@ -587,39 +565,40 @@ class CrashWarningSystem:
                     trin_txt = f"TRIN: {trin_val:.2f}\n极端崩溃 (>3.0)"
                     trin_logic_short = "极端洗盘\n神级买点"
 
-                with col_trin2:
-                    st.info(f"状态判定: {status_desc}")
+                log_text(f"   状态判定: {status_desc}")
 
-                trend_msg = ""
-                if spx_trend_up: 
+                # 2. 趋势配合/背离分析 (Console Only)
+                log_text(f"   趋势配合:")
+                if spx_trend_up: # 大盘处于上升趋势 (50MA之上)
                     if trin_val < 1.0:
-                        trend_msg = f"🟢 [健康] SPX上涨 + TRIN<1.0 -> 买气充足，升势稳健"
+                        log_text(f"   \U0001f7e2 [健康] SPX上涨 + TRIN<1.0 -> 买气充足，升势稳健")
                     elif trin_val > 1.2:
-                        trend_msg = f"🔴 [背离] SPX上涨 + TRIN>1.2 -> 价格涨但内部虚弱 (小心诱多)"
+                        log_text(f"   \U0001f534 [背离] SPX上涨 + TRIN>1.2 -> 价格涨但内部虚弱 (小心诱多)")
                     else:
-                        trend_msg = f"⚪ [中性] SPX上涨 + TRIN正常"
-                else: 
+                        log_text(f"   \u26aa [中性] SPX上涨 + TRIN正常")
+                else: # 大盘处于下降趋势
                     if trin_val > 1.0:
-                         trend_msg = f"🟢 [正常] SPX下跌 + TRIN>1.0 -> 正常的获利回吐/下跌"
+                         log_text(f"   \U0001f7e2 [正常] SPX下跌 + TRIN>1.0 -> 正常的获利回吐/下跌")
                     elif trin_val < 0.8:
-                         trend_msg = f"🔴 [背离] SPX下跌 + TRIN<0.8 -> 价格跌但内部惜售 (小心诱空)"
-                
-                st.caption(trend_msg)
+                         log_text(f"   \U0001f534 [背离] SPX下跌 + TRIN<0.8 -> 价格跌但内部惜售 (小心诱空)")
 
+                # 3. 极值提示
                 if trin_val < 0.5:
-                    st.error(f"🚨 [警报] TRIN < 0.5: 无论大盘涨跌，均为短期【见顶】信号！")
+                    log_text(f"   \U0001f6a8 [警报] TRIN < 0.5: 无论大盘涨跌，均为短期【见顶】信号！")
                 elif trin_val > 2.0:
-                    st.success(f"💰 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
+                    log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
-                st.divider()
+                log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
+                st.text("----------------------------------------")
 
             else: 
-                st.warning("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
+                log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
             # --- [TRIN Upgrade End] ---
 
             if adv_vol > 0:
                 vr_calc = dec_vol / adv_vol
-            else: pass 
+                log_text(f"3. Vol Ratio = {vr_calc:.2f}")
+            else: log_text("3. Vol Ratio: 数据不足")
             
             i_split = (h_pct > 2.2 and l_pct > 2.2)
             mco_condition = False
@@ -630,6 +609,7 @@ class CrashWarningSystem:
             h_ctx = f"SPX状态: {trend_desc}\n{pos_str}\n新高:{h_raw}({h_pct:.2f}%) | 新低:{l_raw}({l_pct:.2f}%)\n{mco_str}"
             h_log = "趋势标准: 20/60/120/250均线综合\n& (新高/低同时>2.2%)\n& 新高 < 2×新低\n& MCO < 0"
             
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if (spx_trend_up and i_split and mco_condition) else (1 if i_split else 0)
             indicators.append(["Hindenburg Omen (凶兆)", status_code, h_ctx, h_log])
             
@@ -638,7 +618,9 @@ class CrashWarningSystem:
             elif net_issues < -1000: net_stat = 1
             indicators.append(["抛压监测 I: 广度 (Net Issues)", net_stat, f"Net Issues: {net_issues}", "标准: <-1000 显著\n<-2000 恐慌"])
             
+            # --- TRIN Append (Updated) ---
             indicators.append(["抛压监测 II: 力度 (TRIN Index)", trin_stat, trin_txt, trin_logic_short])
+            # -----------------------------
 
             vol_stat = 0; vol_txt = "数据不足"
             if adv_vol > 0 and dec_vol > 0:
@@ -662,13 +644,13 @@ class CrashWarningSystem:
 
         tv_adv, tv_decl = self.scraper.fetch_tv_breadth_vision()
         if tv_adv is not None and tv_decl is not None:
-            st.markdown("#### NASDAQ 广度 (WSJ)")
-            c1, c2 = st.columns(2)
-            c1.metric("上涨家数 (ADV)", tv_adv)
-            c2.metric("下跌家数 (DECL)", tv_decl)
+            print_h("【重点数据】NASDAQ 广度 (源自 WSJ Text)")
+            log_text(f"  \U0001f4c8 上涨家数 (ADV) : {tv_adv}") 
+            log_text(f"  \U0001f4c9 下跌家数 (DECL): {tv_decl}") 
             
         if tv_adv and tv_decl:
             tv_ratio = round(tv_adv / tv_decl, 2)
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if tv_ratio < 0.5 else (1 if tv_ratio < 1.0 else 0)
             indicators.append(["NASDAQ 广度 (A/D Ratio)", status_code, f"Adv: {tv_adv} | Dec: {tv_decl}\nRatio: {tv_ratio}", "标准: Ratio < 1.0 (跌多涨少)\nRatio < 0.5 (空头主导)"])
         else:
@@ -678,12 +660,14 @@ class CrashWarningSystem:
             r = rsp/spy
             curr, ma = r.iloc[-1], r.rolling(50).mean().iloc[-1]
             chg = (curr/r.iloc[-20]-1)*100
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if (curr<ma and chg<-2.0) else (1 if curr<ma else 0)
             indicators.append(["市场广度 (RSP vs SPY)", status_code, f"比率:{curr:.3f} (MA50:{ma:.3f})\n20日变化:{chg:.1f}%", "逻辑: 比率跌破50MA (广度变差)\n& 20日急跌(严重背离)<-2.0%"])
         except: indicators.append(["市场广度 (RSP vs SPY)", 0, "计算失败", "数据不足"])
 
         try:
             n_ok = nya.iloc[-1] > nya.rolling(50).mean().iloc[-1]
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if (spx_trend_up and not n_ok) else (1 if not n_ok else 0)
             indicators.append(["全市场参与度 (^NYA)", status_code, f"SPX:{spx_trend_txt}\nNYA:{'强' if n_ok else '弱'}", "逻辑: SPX 强 (>50MA) 但 NYA 弱 (<50MA) = 风险触发"])
         except: indicators.append(["全市场参与度 (^NYA)", 0, "计算失败", "数据不足"])
@@ -710,6 +694,7 @@ class CrashWarningSystem:
             ratio_str = f"{margin_ratio:.1f}%" if margin_ratio else "N/A"
             line1 = f"{margin_amt:.3f}万亿, GDP%:{ratio_str}"
             line2 = f"YoY:{val_margin_yoy:+.1f}%" if val_margin_yoy is not None else "YoY: N/A"
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 1 if is_high_risk else 0
             indicators.append(["美股保证金债务 Margin Debt", status_code, f"{line1}\n{line2}", "标准: GDP比≥3.5% (预警)\n或 YoY > 50%"])
         else:
@@ -718,11 +703,13 @@ class CrashWarningSystem:
         try:
             v = vix.iloc[-1]
             chg = (v/vix.iloc[-15]-1)*100
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if (v>25 or chg>40) else 0
             indicators.append(["VIX 恐慌指数 (异动)", status_code, f"现值:{v:.1f}\n14天涨幅:{chg:.0f}%", "标准: 14天涨幅>40% (提早预警)\n或 绝对值>25 (高压区)"])
         except: indicators.append(["VIX 恐慌指数 (异动)", 0, "数据不足", ""])
 
         if ma50_pct is not None:
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if ma50_pct<40 else (1 if ma50_pct<60 else 0)
             indicators.append(["市场广度 (>50MA & >20MA)", status_code, f">50MA: {ma50_pct:.1f}%\n>20MA: {ma20_pct:.1f}%", "50MA: <60%警 <40%险\n20MA: <50%警 <30%险"])
         else:
@@ -730,25 +717,35 @@ class CrashWarningSystem:
 
         # --- [RSI 顶背离核心升级模块 (V10.045 Tuning)] ---
         try:
+            # 1. 算法升级: Wilder's Smoothing (更平滑) + 数学防呆
             delta = spx_weekly.diff()
             gain = (delta.where(delta > 0, 0)).ewm(alpha=1/14, adjust=False).mean()
             loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
+            # [Fix] 防止除零错误 (虽罕见但稳健)
             loss = loss.replace(0, 1e-9) 
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs))
             
+            # 2. 峰值检测引擎 (Tuned: 灵敏度提升)
+            # [Tuning] 改为 +/- 1 周 (更灵敏，无需等待2周确认)
             is_peak = (spx_weekly > spx_weekly.shift(1)) & \
                       (spx_weekly > spx_weekly.shift(-1))
             
+            # 获取所有峰值的日期
             peak_dates = spx_weekly[is_peak].index
             
+            # 3. 背离判定逻辑
             divergence_detected = False
             div_msg = f"现值:{rsi.iloc[-1]:.1f} (无背离)"
             
+            # 至少需要两个峰值才能比对
             if len(peak_dates) >= 2:
-                p2_date = peak_dates[-1] 
-                p1_date = peak_dates[-2] 
+                # 获取最近的两个峰值时间 (Last 和 Previous)
+                p2_date = peak_dates[-1] # 最近的一个峰值
+                p1_date = peak_dates[-2] # 再前一个峰值
                 
+                # [Tuning] 时间窗口校验: 两个峰值之间不能太久 (比如60天)，否则失效
+                # 且最近一个峰值要在近期
                 days_between = (p2_date - p1_date).days
                 days_since_last = (spx_weekly.index[-1] - p2_date).days
                 
@@ -756,6 +753,10 @@ class CrashWarningSystem:
                     price_h2 = spx_weekly[p2_date]; price_h1 = spx_weekly[p1_date]
                     rsi_h2 = rsi[p2_date];       rsi_h1 = rsi[p1_date]
                     
+                    # 判定条件:
+                    # A. 价格创新高 (P2 > P1)
+                    # B. RSI 未创新高 (R2 < R1)
+                    # C. RSI 处于高位区间 (R1 > 60, 过滤弱势波动)
                     if price_h2 > price_h1 and rsi_h2 < rsi_h1 and rsi_h1 > 60:
                         divergence_detected = True
                         div_msg = f"顶背离确认!\n价格:{price_h1:.0f}->{price_h2:.0f}(新高)\nRSI:{rsi_h1:.1f}->{rsi_h2:.1f}(走低)"
@@ -763,23 +764,30 @@ class CrashWarningSystem:
             indicators.append(["RSI 周线顶背离", 2 if divergence_detected else 0, div_msg, "标准: 价格HH + RSI LH\n(灵敏度: +/-1周 | Wilder算法)"])
             
         except Exception as e:
+            # print_err(f"RSI 计算出错: {e}") 
             indicators.append(["RSI 周线顶背离", 0, "计算失败", "数据不足"])
 
         try:
+            # 【逻辑修正】牛市支撑带：由 20周SMA 和 21周EMA 共同构成的区间
             sma20 = spx_weekly.rolling(20).mean().iloc[-1]
             ema21 = spx_weekly.ewm(span=21, adjust=False).mean().iloc[-1]
             
+            # 定义带状区域：取两者的最大值和最小值作为上下轨
             band_upper = max(sma20, ema21)
             band_lower = min(sma20, ema21)
             
-            now = spx.iloc[-1] 
+            now = spx.iloc[-1] # 当前最新价格
             
+            # 判断逻辑：只有价格跌破“下轨”才算真正跌破支撑带
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if now < band_lower else 0
             
+            # 优化显示：展示支撑带的范围
             msg = f"现价:{now:.0f}\n区间:{band_lower:.0f}~{band_upper:.0f}"
             indicators.append(["牛市支撑带 (20SMA/21EMA)", status_code, msg, "标准: 跌穿 20周SMA 与 21周EMA 构成的双线区间"])
             
         except Exception as e:
+            # print(e) # 调试用
             indicators.append(["牛市支撑带 (20SMA/21EMA)", 0, "计算失败", "数据不足"])
 
         if real_fg is not None:
@@ -808,18 +816,21 @@ class CrashWarningSystem:
             indicators.append(["Sahm Rule (衰退规则)", 0, "获取失败", "FRED源无响应"])
 
         if lei_depth is not None:
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if lei_depth < -4.1 else 0
             indicators.append(["LEI 领先指标 (3Ds)", status_code, f"Depth:{lei_depth:.1f}%\nDiffusion:{lei_diff}", "标准: Depth < -4.1% & Diffusion ≤50 (衰退触发)\n/ Depth <0 或 Diffusion <100 (预警)"])
         else:
             indicators.append(["LEI 领先指标 (3Ds)", 0, "抓取失败", "Firecrawl/AI 无结果"])
 
         if pcr_avg is not None:
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             status_code = 2 if pcr_avg < 0.8 else 0
             indicators.append(["CBOE Put/Call Ratio", status_code, f"读数: {pcr_curr:.2f}\n(源:10日均值版)", "标准: < 0.8 (贪婪/短线高点)\n> 1.1 (恐慌/短线低点)"])
         else:
             indicators.append(["CBOE Put/Call Ratio", 0, "抓取失败", "MacroMicro源无响应"])
 
         if val_nfci is not None:
+            # ### CHANGED HERE ###: 变量名 st -> status_code
             if val_nfci > -0.2: status_code = 2
             elif val_nfci > -0.35: status_code = 1
             else: status_code = 0
@@ -847,10 +858,10 @@ class CrashWarningSystem:
             else:
                 nymo_desc = "中性区 (正常波动)"
             nymo_txt = f"读数: {real_nymo:.2f}\n【定性】{nymo_desc}"
-            
-            st.markdown("#### NYMO 广度")
-            st.metric("StockCharts $NYMO", f"{real_nymo:.2f}", help=nymo_desc)
-            st.divider()
+            print_h("【简单结论】NYMO 广度")
+            log_text(f"  当前读数: {real_nymo}")
+            log_text(f"  区域判断: {nymo_desc}")
+            st.text("------------------------------")
         
         nymo_data = ["StockCharts 广度 ($NYMO)", nymo_stat, nymo_txt, "极值: <-60恐慌底 / >+60过热顶\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"]
         
@@ -902,14 +913,17 @@ class CrashWarningSystem:
         table.auto_set_font_size(False); table.set_fontsize(23)
 
         # --- [UI 优化: 动态行距调整] ---
+        # 寻找 RSI 所在的行号
         target_row_idx = -1
         for i, row_cont in enumerate(table_data):
             if row_cont and "RSI" in str(row_cont[0]):
-                target_row_idx = i + 1 
+                target_row_idx = i + 1 # +1 是因为 header 占了第 0 行
                 break
         
+        # 默认兜底 (如果没有找到 RSI，还是针对原定行)
         if target_row_idx == -1: target_row_idx = 12 
 
+        # 扩大约 35% 以容纳 3 行文字
         target_height_factor = 1.35 
         
         std_height = table[0, 0].get_height()
@@ -922,6 +936,7 @@ class CrashWarningSystem:
                 cell.set_height(std_height * target_height_factor)
             elif row > target_row_idx:
                 current_y = cell.get_y()
+                # 向下顺延 (y坐标减小)
                 cell.set_y(current_y - extra_h)
 
             if row in [1, 2]: cell.set_edgecolor(self.colors['edge']) 
@@ -952,8 +967,9 @@ class CrashWarningSystem:
         
         ax.text(0.5, 0.05, msg, ha='center', va='center', fontsize=34, fontweight='bold', color=clr)
 
+        # ### CHANGED HERE ###: Streamlit 直接显示图片，不保存文件
         st.pyplot(fig)
-        print_ok(f"报表已生成: (网页显示)") 
+        print_ok(f"报表已生成: (网页显示)") # ### CHANGED HERE ###
 
 # ==============================================================================
 # 模块：板块轮动引擎 (Fix: 白底 + 汉字乱码修复 + 大白话坐标 + 10日爆发)
@@ -970,17 +986,17 @@ class SectorRotationEngine:
         self.mom_window = 10 
 
     def run_analysis(self):
-        st.divider()
-        st.subheader(f"🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}")
-        st.divider()
+        # ### CHANGED HERE ###: 100% 复刻 output.txt 的 Sector 头部
+        st.text("\n===========================================================================")
+        st.text(f" 🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.text("===========================================================================")
         
         try:
             tickers = list(self.sectors.keys())
             start_date = (datetime.now() - timedelta(days=300)).strftime('%Y-%m-%d')
             print_step(f"下载 11 个板块数据 ({start_date} ~ Now)...")
             
-            # ### CHANGED HERE ###: 禁用多线程 (threads=False)
-            raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False, threads=False)
+            raw_data = yf.download(tickers, start=start_date, progress=False, auto_adjust=False)
             
             if raw_data.empty:
                 print_err("数据下载失败，跳过板块轮动分析。")
@@ -1089,33 +1105,21 @@ class SectorRotationEngine:
         })
 
     def _print_console_summary(self, df, movers):
-        st.markdown("#### 📊 RRG 象限分布")
-        
-        cols = st.columns(4)
-        quadrants = ["Leading (领涨)", "Improving (改善)", "Weakening (转弱)", "Lagging (落后)"]
-        colors = ["green", "blue", "orange", "red"]
-        
-        for i, q in enumerate(quadrants):
+        log_text("\n📊 [RRG 象限分布] - 研报版") 
+        for q in ["Leading (领涨)", "Improving (改善)", "Weakening (转弱)", "Lagging (落后)"]:
             items = df[df['Quadrant'] == q]
-            with cols[i]:
-                st.markdown(f"**:{colors[i]}[{q}]**")
-                if not items.empty:
-                    for _, r in items.iterrows():
-                        st.write(f"- {r['Name']}")
-                else:
-                    st.caption("无")
+            if not items.empty:
+                ticks = ", ".join([f"{r['Name']}" for _, r in items.iterrows()])
+                icon = "\U0001f7e2" if "Leading" in q else ("\U0001f535" if "Improving" in q else ("\U0001f7e1" if "Weakening" in q else "\U0001f534")) 
+                log_text(f"   {icon} {q}: {ticks}")
         
-        st.markdown("#### 🚀 10日 资金抢筹榜")
+        log_text("\n🚀 [10日 资金抢筹榜] (短期爆发力)") 
         if movers:
-            mover_df = pd.DataFrame(movers)
-            st.dataframe(
-                mover_df[['Name', 'Alpha_10d']].rename(columns={'Name': '板块', 'Alpha_10d': '超额收益(%)'}),
-                hide_index=True,
-                use_container_width=True
-            )
+            for m in movers:
+                log_text(f"   \U0001f525 {m['Name']}: 跑赢大盘 {m['Alpha_10d']:.2f}%") 
         else:
-            st.info("近期无明显异动板块")
-        st.divider()
+            log_text("   (近期无明显异动板块)")
+        st.text("===========================================================================") # ### CHANGED HERE ###
 
     def _generate_summary_text(self, df, movers):
         leaders = df[df['Quadrant'] == "Leading (领涨)"]['Name'].tolist()
@@ -1130,9 +1134,10 @@ class SectorRotationEngine:
 # 【附加功能：FRED 收益率曲线/失业率红绿灯】
 # ==========================================
 def run_fred_traffic_light(fred_key):
-    st.divider()
-    st.subheader("🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连)")
-    st.divider()
+    # ### CHANGED HERE ###: 100% 复刻 output.txt 的 FRED Traffic Light 头部
+    st.text("\n==================================================")
+    st.text("🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
+    st.text("==================================================")
     
     def get_valid_fred_data(series_id, count=1):
         url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={fred_key}&file_type=json&sort_order=desc&limit=10"
@@ -1168,38 +1173,35 @@ def run_fred_traffic_light(fred_key):
         date_unrate = data_unrate[0]['date']
         prev_unrate = data_unrate[1]['value']
         
-        c1, c2 = st.columns(2)
-        c1.metric("10Y-2Y 利差", f"{val_curve:+.2f}%", help=f"日期: {date_curve}")
-        c2.metric("失业率 (UNRATE)", f"{val_unrate}%", f"{val_unrate - prev_unrate:.1f}%", help=f"日期: {date_unrate}")
+        log_text(f"数据源: St. Louis Fed (API Key已验证)")
+        log_text(f"1. 10Y-2Y 利差 (T10Y2Y): {val_curve:+.2f}%  (日期: {date_curve})")
+        log_text(f"2. 失业率 (UNRATE)     : {val_unrate}%  (日期: {date_unrate}) [前值: {prev_unrate}%]")
+        st.text("--------------------------------------------------") # ### CHANGED HERE ###
 
         signal = ""
         advice = ""
         if val_curve < 0 and (val_unrate > 5.0 or val_unrate > prev_unrate):
-            signal = "🔴 红灯 (大衰退警报)" 
+            signal = "\U0001f534\U0001f534 红灯 (大衰退警报)" 
             advice = "赶紧减仓或卖出！衰退风险极高，股市大概率大跌，转防御股或现金。"
-            st.error(f"### {signal}\n{advice}")
         elif val_curve < 0 and val_unrate < 5.0:
-            signal = "🟡 黄灯 (左侧预警)" 
+            signal = "\U0001f7e1 黄灯 (左侧预警)" 
             advice = "先观望，别急着全仓卖，但不要猛加仓，准备防守。"
-            st.warning(f"### {signal}\n{advice}")
         elif val_curve > 0 and val_unrate >= 5.0:
-             signal = "🟡 黄灯 (经济放缓)" 
+             signal = "\U0001f7e1 黄灯 (经济放缓)" 
              advice = "小心点，关注后续数据，可能经济在放缓，适当减仓。"
-             st.warning(f"### {signal}\n{advice}")
         elif val_curve > 0 and val_unrate < prev_unrate:
-            signal = "🟢 超级绿灯 (最佳买点)" 
+            signal = "\U0001f7e2\U0001f7e2 超级绿灯 (最佳买点)" 
             advice = "最佳买入时机！往往是大牛市起点，大胆加仓周期股和成长股。"
-            st.success(f"### {signal}\n{advice}")
         elif val_curve > 0 and val_unrate < 4.5:
-             signal = "🟢 绿灯 (安全期)" 
+             signal = "\U0001f7e2 绿灯 (安全期)" 
              advice = "放心大胆买！经济扩张期，股市最好。"
-             st.success(f"### {signal}\n{advice}")
         else:
-             signal = "🟢 绿灯 (当前稳健)" 
+             signal = "\U0001f7e2 绿灯 (当前稳健)" 
              advice = "继续持有或加仓！经济还稳，股市有支撑。"
-             st.success(f"### {signal}\n{advice}")
 
-        st.divider()
+        log_text(f"\U0001f6a6 信号灯状态: {signal}") 
+        log_text(f"\U0001f4a1 操作建议  : {advice}") 
+        st.text("==================================================") # ### CHANGED HERE ###
 
     except Exception as e:
         print_err(f"FRED API 调用失败: {e}")
@@ -1209,7 +1211,7 @@ def run_fred_traffic_light(fred_key):
 # ==========================================
 def run_fred_v10_dashboard(api_key):
     masked_key = api_key[:6] + "..." if len(api_key) > 6 else "xxxx..."
-    st.subheader("▬ ₪  FRED 集成版 (V10.003) - 补充宏观快照  ▬") 
+    st.text("\n▬ ₪  FRED 集成版 (V10.003) - 补充宏观快照  ▬") # ### CHANGED HERE ###
     print_step(f"正在连接 St. Louis Fed (Key: {masked_key})...") 
     
     try:
@@ -1226,17 +1228,19 @@ def run_fred_v10_dashboard(api_key):
     except: vix_val = 0.0
 
     current_date_str = datetime.now().strftime('%Y-%m-%d')
-    if vix_val < 20: vix_status = "正常" 
-    elif vix_val > 30: vix_status = "恐慌" 
-    else: vix_status = "警告" 
+    if vix_val < 20: vix_status = "\U0001f7e2 正常" 
+    elif vix_val > 30: vix_status = "\U0001f534 恐慌" 
+    else: vix_status = "\U0001f7e1 警告" 
 
-    if curve_val > 0: yield_status = "正向" 
-    else: yield_status = "倒挂" 
+    if curve_val > 0: yield_status = "\U0001f7e2 正向" 
+    else: yield_status = "\U0001f534 倒挂" 
 
-    c1, c2 = st.columns(2)
-    c1.metric("市场恐慌指数 VIX", f"{vix_val:.2f}", vix_status)
-    c2.metric("10Y-2Y 收益率差", f"{curve_val:.2f}%", yield_status)
-    st.divider()
+    st.text("\n----------------------------------------") # ### CHANGED HERE ###
+    log_text(f"📊 宏观与市场快照 ({current_date_str})") 
+    st.text("----------------------------------------") # ### CHANGED HERE ###
+    log_text(f"1. 市场恐慌指数 VIX: {vix_val:.2f} ({vix_status})")
+    log_text(f"2. 10Y-2Y 收益率差 : {curve_val:.2f}% ({yield_status})")
+    st.text("----------------------------------------") # ### CHANGED HERE ###
 
 # ==========================================
 # 【NEW MODULE】SMT 背离分析引擎 (V3 Pro - 经典回归+深度解读)
@@ -1262,15 +1266,15 @@ class SMTDivergenceAnalyzer:
         self.signals = [] # 收集所有信号用于总结
 
     def run(self):
-        st.divider()
-        st.subheader(f"🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
-        st.divider()
+        # ### CHANGED HERE ###: 100% 复刻 output.txt 的 SMT 头部
+        st.text("\n===========================================================================")
+        st.text(f" 🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
+        st.text("===========================================================================")
 
         # 1. 批量下载数据
         print_step("下载全量数据 (含期货/等权ETF)...")
         try:
-            # ### CHANGED HERE ###: 禁用多线程 (threads=False)
-            data = yf.download(self.all_tickers, period="6mo", auto_adjust=False, progress=False, threads=False)
+            data = yf.download(self.all_tickers, period="6mo", auto_adjust=False, progress=False)
             
             if isinstance(data.columns, pd.MultiIndex):
                 try: df_close = data['Close']
@@ -1285,25 +1289,22 @@ class SMTDivergenceAnalyzer:
                 return
 
             print_ok("数据获取成功，开始计算...")
-            st.divider()
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
 
             # 2. 经典 SMT (恢复老版样式)
-            st.markdown("### 1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
+            print_h("1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
+            for period in self.periods:
+                self._analyze_classic_style(df_close, period)
             
-            tabs = st.tabs([f"{p}日窗口" for p in self.periods])
-            for i, period in enumerate(self.periods):
-                with tabs[i]:
-                    self._analyze_classic_style(df_close, period)
-            
-            st.divider()
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
             
             # 3. Pro SMT (增强信息量)
-            st.markdown("### 2. 进阶 SMT 分析 (期货 & 市场广度)")
-            st.info("💡 期货(NQ/ES)包含夜盘，反应更真实；SPY/RSP揭示只有巨头在涨还是普涨。")
+            print_h("2. 进阶 SMT 分析 (期货 & 市场广度)")
+            print_info("💡 期货(NQ/ES)包含夜盘，反应更真实；SPY/RSP揭示只有巨头在涨还是普涨。")
             self._analyze_pro_futures(df_close, 10) # 10日是期货背离黄金窗口
             self._analyze_pro_breadth(df_close, 20) # 20日看广度最准
             
-            st.divider()
+            st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
 
             # 4. 关键位与入场
             self._analyze_entry_signals(df_close)
@@ -1336,32 +1337,38 @@ class SMTDivergenceAnalyzer:
             if current_prices[t] >= period_highs[t] * 0.9995: made_new_high.append(t)
             if current_prices[t] <= period_lows[t] * 1.0005: made_new_low.append(t)
             
+        # ### CHANGED HERE ###: 移除 "if not made_new_high and not made_new_low: return" 
+        # 强制输出窗口标题，确保 5, 10, 20, 60 日信息不丢失
+
+        log_text(f"[{period}日窗口]")
+        
         if len(made_new_high) > 0 and len(made_new_high) < len(target_tickers):
             failed = [self.names[t] for t in target_tickers if t not in made_new_high]
             success = [self.names[t] for t in made_new_high]
             msg = f"**看跌背离 (Bearish)** - 预示顶部"
-            st.error(f"🔴 {msg}")
-            st.write(f"- 创新高: {', '.join(success)}")
-            st.write(f"- 未确认: {', '.join(failed)} (虚弱)")
+            log_text(f"   \U0001f534 状态: {msg}") 
+            log_text(f"   -> 创新高: {', '.join(success)}")
+            log_text(f"   -> 未确认: {', '.join(failed)} (虚弱)")
             self.signals.append(-1)
         
         elif len(made_new_low) > 0 and len(made_new_low) < len(target_tickers):
             failed = [self.names[t] for t in target_tickers if t not in made_new_low]
             success = [self.names[t] for t in made_new_low]
             msg = f"**看涨背离 (Bullish)** - 预示底部"
-            st.success(f"🟢 {msg}")
-            st.write(f"- 创新低: {', '.join(success)}")
-            st.write(f"- 未确认: {', '.join(failed)} (抗跌)")
+            log_text(f"   \U0001f7e2 状态: {msg}") 
+            log_text(f"   -> 创新低: {', '.join(success)}")
+            log_text(f"   -> 未确认: {', '.join(failed)} (抗跌)")
             self.signals.append(1)
             
         elif len(made_new_high) == len(target_tickers):
-            st.warning(f"🔥 状态: 强多头共振 (全部创新高)") 
+            log_text(f"   \U0001f525 状态: 强多头共振 (全部创新高)") 
             self.signals.append(0.5)
         elif len(made_new_low) == len(target_tickers):
-            st.info(f"🧊 状态: 强空头共振 (全部创新低)") 
+            log_text(f"   \U0001f9ca 状态: 强空头共振 (全部创新低)") 
             self.signals.append(-0.5)
         else:
-            st.caption(f"⚪ 状态: 无新高/新低 (区间震荡)")
+            # ### CHANGED HERE ###: 增加兜底输出，确保无信号时也显示状态
+            log_text(f"   ⚪ 状态: 无新高/新低 (区间震荡)")
 
     # --- 风格2：Pro 期货分析 (信息更充分) ---
     def _analyze_pro_futures(self, df, period):
@@ -1382,26 +1389,26 @@ class SMTDivergenceAnalyzer:
         res = ""
         detail = ""
         if nq_high and not es_high:
-            res = "🔴 [看跌] 科技拉升，标普不跟"
+            res = "\U0001f534 [看跌] 科技拉升，标普不跟"
             detail = "解读: 资金只敢做多高流动性的纳指，不敢全面做多，是诱多信号。"
             self.signals.append(-2)
         elif not nq_high and es_high:
-            res = "🔴 [看跌] 标普补涨，科技滞涨"
+            res = "\U0001f534 [看跌] 标普补涨，科技滞涨"
             detail = "解读: 领头羊纳指动能衰竭，补涨通常是行情尾声。"
             self.signals.append(-1)
         elif nq_low and not es_low:
-            res = "🟢 [看涨] 纳指杀跌，标普拒绝"
+            res = "\U0001f7e2 [看涨] 纳指杀跌，标普拒绝"
             detail = "解读: 科技股恐慌抛售，但大盘蓝筹拒绝创新低，有护盘资金。"
             self.signals.append(2)
         elif not nq_low and es_low:
-            res = "🟢 [看涨] 标普新低，纳指抗跌"
+            res = "\U0001f7e2 [看涨] 标普新低，纳指抗跌"
             detail = "解读: 领头羊纳指率先止跌，通常是反转先兆。"
             self.signals.append(1)
         else:
-            res = "⚪ [中性] 期货步调一致"
+            res = "\u26aa [中性] 期货步调一致"
             
-        st.markdown(f"**[{period}日 期货SMT]**: {res}")
-        if detail: st.caption(detail)
+        log_text(f"📊 [{period}日 期货SMT]: {res}")
+        if detail: log_text(f"   {detail}")
 
     # --- 风格3：Pro 广度分析 (RSP) ---
     def _analyze_pro_breadth(self, df, period):
@@ -1424,101 +1431,95 @@ class SMTDivergenceAnalyzer:
         # 3. 判定逻辑
         # 情况A: SPY创新高，RSP没创新高，且RSP涨幅落后SPY -> 危险 (只有巨头在涨)
         if spy_high and not rsp_high and spy_perf > rsp_perf:
-            st.error(f"📊 [{period}日 内部背离]: 🔴 极度危险 (虚假繁荣)")
-            st.write(f"- 数据: SPY(+{spy_perf:.1f}%) 创新高 | RSP(+{rsp_perf:.1f}%) 滞涨")
-            st.caption(f"解读: 只有几只巨头(SPY权重)在涨，490只成分股(RSP)没跟。")
+            log_text(f"📊 [{period}日 内部背离]: \U0001f534 极度危险 (虚假繁荣)")
+            log_text(f"   数据: SPY(+{spy_perf:.1f}%) 创新高 | RSP(+{rsp_perf:.1f}%) 滞涨")
+            log_text(f"   解读: 只有几只巨头(SPY权重)在涨，490只成分股(RSP)没跟。")
             self.signals.append(-2)
         
         # 情况B: 虽然RSP没创新高，但是跑赢了SPY (或涨幅差不多) -> 良性轮动
         elif spy_high and not rsp_high and rsp_perf >= spy_perf:
-            st.success(f"📊 [{period}日 广度修复]: 🟢 良性轮动 (RSP跑赢)")
-            st.write(f"- 数据: RSP(+{rsp_perf:.1f}%) > SPY(+{spy_perf:.1f}%)")
-            st.caption(f"解读: 虽然RSP未创新高(前期跌多了)，但近期反弹强于大盘，市场广度在变好。")
+            log_text(f"📊 [{period}日 广度修复]: \U0001f7e2 良性轮动 (RSP跑赢)")
+            log_text(f"   数据: RSP(+{rsp_perf:.1f}%) > SPY(+{spy_perf:.1f}%)")
+            log_text(f"   解读: 虽然RSP未创新高(前期跌多了)，但近期反弹强于大盘，市场广度在变好。")
             self.signals.append(1)
 
         # 情况C: 普涨
         elif spy_high and rsp_high:
-            st.success(f"📊 [{period}日 内部健康]: 🟢 市场普涨 (健康牛市)")
+            log_text(f"📊 [{period}日 内部健康]: \U0001f7e2 市场普涨 (健康牛市)")
             self.signals.append(1)
             
         else:
-             st.info(f"📊 [{period}日 市场广度]: ⚪ 正常波动 (RSP: {rsp_perf:.1f}%)")
+             log_text(f"📊 [{period}日 市场广度]: \u26aa 正常波动 (RSP: {rsp_perf:.1f}%)")
 
 
     # --- Vincent 策略: 入场信号 (更清晰的标准) ---
     def _analyze_entry_signals(self, df):
-        st.markdown("### 3. 关键位与入场信号 (Vincent 策略)")
+        print_h("3. 关键位与入场信号 (Vincent 策略)")
         
-        cols = st.columns(2)
-        for i, ticker in enumerate(['SPY', 'QQQ']):
+        for ticker in ['SPY', 'QQQ']:
             if ticker not in df.columns: continue
-            with cols[i]:
-                close = df[ticker]
-                curr = close.iloc[-1]
-                ma20 = close.rolling(20).mean().iloc[-1]
-                ma50 = close.rolling(50).mean().iloc[-1]
-                high20 = close.iloc[-20:].max()
-                
-                # 计算距离
-                dist_ma20 = (curr - ma20) / ma20 * 100
-                
-                st.markdown(f"#### 📌 {self.names[ticker]}")
-                st.write(f"现价: {curr:.2f} (MA20: {ma20:.2f})")
-                
-                # 判断逻辑
-                if abs(dist_ma20) < 0.6 and curr > ma20:
-                    st.success(f"🔥 [信号]: 完美回踩 MA20")
-                    st.caption(f"👉 操作: 若 SMT 同时出现看涨背离，则是绝佳【做多】点位。")
-                elif abs(dist_ma20) < 0.6 and curr < ma20:
-                    st.error(f"❄️ [信号]: 反抽 MA20 受阻")
-                    st.caption(f"👉 操作: 若 SMT 同时出现看跌背离，则是绝佳【做空】点位。")
-                elif (high20 - curr)/curr < 0.005:
-                    st.warning(f"🚧 [信号]: 逼近前高阻力")
-                    st.caption(f"👉 操作: 观察是否假突破(SFP)。若创新高后迅速跌回，做空。")
-                else:
-                    st.info(f"🌊 [状态]: 趋势运行中，等待关键位测试...")
+            close = df[ticker]
+            curr = close.iloc[-1]
+            ma20 = close.rolling(20).mean().iloc[-1]
+            ma50 = close.rolling(50).mean().iloc[-1]
+            high20 = close.iloc[-20:].max()
+            
+            # 计算距离
+            dist_ma20 = (curr - ma20) / ma20 * 100
+            
+            log_text(f"📌 {self.names[ticker]} 价格行为:")
+            log_text(f"   现价: {curr:.2f} (MA20: {ma20:.2f})")
+            
+            # 判断逻辑
+            if abs(dist_ma20) < 0.6 and curr > ma20:
+                log_text(f"   🔥 [信号]: 完美回踩 MA20")
+                log_text(f"   👉 操作: 若 SMT 同时出现看涨背离，则是绝佳【做多】点位。")
+            elif abs(dist_ma20) < 0.6 and curr < ma20:
+                log_text(f"   ❄️ [信号]: 反抽 MA20 受阻")
+                log_text(f"   👉 操作: 若 SMT 同时出现看跌背离，则是绝佳【做空】点位。")
+            elif (high20 - curr)/curr < 0.005:
+                log_text(f"   🚧 [信号]: 逼近前高阻力")
+                log_text(f"   👉 操作: 观察是否假突破(SFP)。若创新高后迅速跌回，做空。")
+            else:
+                log_text(f"   🌊 [状态]: 趋势运行中，等待关键位测试...")
+            log_text("")
 
     # --- 新增: 市场趋势总结 ---
     def _summarize_market(self):
-        st.markdown("### 4. 🌟 市场趋势总汇 (Executive Summary)")
+        print_h("4. \U0001f31f 市场趋势总汇 (Executive Summary)")
         
         bull_score = sum([s for s in self.signals if s > 0])
         bear_score = sum([abs(s) for s in self.signals if s < 0])
         
         trend = ""
         if bear_score > bull_score and bear_score >= 2:
-            trend = "🔴 趋势转弱 (空头占优)"
+            trend = "\U0001f534 趋势转弱 (空头占优)"
             action = "防守/减仓，关注做空机会"
-            st.error(f"**总评**: {trend}\n\n**建议**: {action}")
         elif bull_score > bear_score and bull_score >= 2:
-            trend = "🟢 趋势增强 (多头占优)"
+            trend = "\U0001f7e2 趋势增强 (多头占优)"
             action = "持股待涨，寻找回踩做多机会"
-            st.success(f"**总评**: {trend}\n\n**建议**: {action}")
         else:
-            trend = "⚪ 趋势震荡 (多空纠缠)"
+            trend = "\u26aa 趋势震荡 (多空纠缠)"
             action = "多看少动，等待SMT共振信号"
-            st.info(f"**总评**: {trend}\n\n**建议**: {action}")
             
-        st.caption(f"信号强度: 多头({bull_score}) vs 空头({bear_score})")
+        log_text(f"   总评: {trend}")
+        log_text(f"   建议: {action}")
+        log_text(f"   信号强度: 多头({bull_score}) vs 空头({bear_score})")
 
     def _print_legend(self):
-        with st.expander("📚 SMT Pro 策略说明书"):
-            st.markdown("""
-            1. **🔥 期货先行**: NQ/ES 期货包含夜盘，比ETF早 1-4 小时反应。
-            2. **⚖️ 内部广度**: 若 SPY 涨但 RSP 跌 = 虚假繁荣 (看跌)。
-            3. **🎯 Vincent战法**: SMT只是过滤器，必须配合“关键位”。
-               - **买入公式**: SMT看涨背离 + 价格回踩MA20不破。
-               - **卖出公式**: SMT看跌背离 + 价格假突破前高 (或跌破MA20)。
-            """)
+        st.text("---------------------------------------------------------------------------") # ### CHANGED HERE ###
+        log_text("【SMT Pro 策略说明书】")
+        log_text("1. \U0001f525 期货先行: NQ/ES 期货包含夜盘，比ETF早 1-4 小时反应。")
+        log_text("2. \u2696\ufe0f 内部广度: 若 SPY 涨但 RSP 跌 = 虚假繁荣 (看跌)。")
+        log_text("3. \U0001f3af Vincent战法: SMT只是过滤器，必须配合“关键位”。")
+        log_text("   - 买入公式: SMT看涨背离 + 价格回踩MA20不破。")
+        log_text("   - 卖出公式: SMT看跌背离 + 价格假突破前高 (或跌破MA20)。")
+        st.text("===========================================================================") # ### CHANGED HERE ###
 
 
 if __name__ == "__main__":
     st.title("美股崩盘预警系统 Pro (Streamlit版)") ### CHANGED HERE ###
-    
-    # 使用 st.status 替代原来的控制台打印流
-    with st.status("🚀 系统正在初始化...", expanded=True) as status:
-        logger.set_container(status) # 将日志重定向到 status 容器
-        
+    if st.button("🚀 开始运行分析"): ### CHANGED HERE ###
         try:
             app = CrashWarningSystem()
             
@@ -1547,9 +1548,9 @@ if __name__ == "__main__":
             except Exception as e:
                 st.error(f"SMT分析模块运行中断: {e}") ### CHANGED HERE ###
                 traceback.print_exc()
-            
-            status.update(label="✅ 分析完成！", state="complete", expanded=False)
                 
         except Exception as e:
             st.error(f"程序运行出错: {e}") ### CHANGED HERE ###
-            traceback.print_exc()
+            traceback.print_exc() 
+        
+        st.text("\n>>> 计算完成。按 Enter 键退出程序...") # ### CHANGED HERE ###
