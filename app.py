@@ -75,7 +75,7 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # 【UI 工具类 - 适配 st.status】
 # ==========================================
-# 我们定义一个全局的 status 容器，用于在抓取时显示日志
+# 定义全局日志容器，用于在后台运行时显示进度
 class StatusLogger:
     def __init__(self):
         self.container = None
@@ -84,6 +84,7 @@ class StatusLogger:
         self.container = container
 
     def log(self, msg, level="info"):
+        # 仅在有容器时输出，避免干扰主界面布局
         if self.container:
             if level == "step": self.container.write(f"🔹 {msg}")
             elif level == "ok": self.container.write(f"✅ {msg}")
@@ -93,16 +94,17 @@ class StatusLogger:
 
 logger = StatusLogger()
 
-def print_h(msg): pass # 网页版不再打印分割标题，通过 UI 结构体现
+# 重写打印函数，适配网页逻辑
+def print_h(msg): pass # 网页版通过布局体现标题，不再打印分割线
 def print_step(msg): logger.log(msg, "step")
 def print_ok(msg): logger.log(msg, "ok")
 def print_warn(msg): logger.log(msg, "warn")
 def print_err(msg): logger.log(msg, "err")
 def print_info(msg): logger.log(msg, "info")
-def log_text(msg): logger.log(msg, "info") # 默认日志
+def log_text(msg): logger.log(msg, "info") 
 
 # ==========================================
-# 【WebScraper】
+# 【WebScraper】(保持逻辑不变)
 # ==========================================
 class WebScraper:
     def __init__(self):
@@ -1014,9 +1016,9 @@ class SectorRotationEngine:
 
     def run_analysis(self):
         # ### CHANGED HERE ###: 100% 复刻 output.txt 的 Sector 头部
-        st.divider()
-        st.subheader(f"🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}")
-        st.divider()
+        st.divider() ### CHANGED HERE ###
+        st.subheader(f"🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") ### CHANGED HERE ###
+        st.divider() ### CHANGED HERE ###
         
         try:
             tickers = list(self.sectors.keys())
