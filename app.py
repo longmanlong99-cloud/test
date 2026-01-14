@@ -811,8 +811,11 @@ class CrashWarningSystem:
             mco_str = f"MCO_Off:{real_mco:.2f}" if real_mco is not None else "MCO:缺失"
             h_ctx = f"SPX状态: {trend_desc}\n{pos_str}\n新高:{h_raw}({h_pct:.2f}%) | 新低:{l_raw}({l_pct:.2f}%)\n{mco_str}"
             h_log = "趋势标准: 20/60/120/250均线综合\n& (新高/低同时>2.2%)\n& 新高 < 2×新低\n& MCO < 0"
-            h_stat = 2 if (spx_trend_up and i_split and mco_condition) else (1 if i_split else 0)
-            indicators.append(["Hindenburg Omen (凶兆)", h_stat, h_ctx, h_log])
+            
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if (spx_trend_up and i_split and mco_condition) else (1 if i_split else 0)
+            indicators.append(["Hindenburg Omen (凶兆)", status_code, h_ctx, h_log])
+            
             net_stat = 0
             if net_issues < -2000: net_stat = 2
             elif net_issues < -1000: net_stat = 1
@@ -850,8 +853,9 @@ class CrashWarningSystem:
             
         if tv_adv and tv_decl:
             tv_ratio = round(tv_adv / tv_decl, 2)
-            st = 2 if tv_ratio < 0.5 else (1 if tv_ratio < 1.0 else 0)
-            indicators.append(["NASDAQ 广度 (A/D Ratio)", st, f"Adv: {tv_adv} | Dec: {tv_decl}\nRatio: {tv_ratio}", "标准: Ratio < 1.0 (跌多涨少)\nRatio < 0.5 (空头主导)"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if tv_ratio < 0.5 else (1 if tv_ratio < 1.0 else 0)
+            indicators.append(["NASDAQ 广度 (A/D Ratio)", status_code, f"Adv: {tv_adv} | Dec: {tv_decl}\nRatio: {tv_ratio}", "标准: Ratio < 1.0 (跌多涨少)\nRatio < 0.5 (空头主导)"])
         else:
             indicators.append(["NASDAQ 广度 (A/D Ratio)", 0, "抓取失败", "无数据"])
 
@@ -859,14 +863,16 @@ class CrashWarningSystem:
             r = rsp/spy
             curr, ma = r.iloc[-1], r.rolling(50).mean().iloc[-1]
             chg = (curr/r.iloc[-20]-1)*100
-            st = 2 if (curr<ma and chg<-2.0) else (1 if curr<ma else 0)
-            indicators.append(["市场广度 (RSP vs SPY)", st, f"比率:{curr:.3f} (MA50:{ma:.3f})\n20日变化:{chg:.1f}%", "逻辑: 比率跌破50MA (广度变差)\n& 20日急跌(严重背离)<-2.0%"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if (curr<ma and chg<-2.0) else (1 if curr<ma else 0)
+            indicators.append(["市场广度 (RSP vs SPY)", status_code, f"比率:{curr:.3f} (MA50:{ma:.3f})\n20日变化:{chg:.1f}%", "逻辑: 比率跌破50MA (广度变差)\n& 20日急跌(严重背离)<-2.0%"])
         except: indicators.append(["市场广度 (RSP vs SPY)", 0, "计算失败", "数据不足"])
 
         try:
             n_ok = nya.iloc[-1] > nya.rolling(50).mean().iloc[-1]
-            st = 2 if (spx_trend_up and not n_ok) else (1 if not n_ok else 0)
-            indicators.append(["全市场参与度 (^NYA)", st, f"SPX:{spx_trend_txt}\nNYA:{'强' if n_ok else '弱'}", "逻辑: SPX 强 (>50MA) 但 NYA 弱 (<50MA) = 风险触发"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if (spx_trend_up and not n_ok) else (1 if not n_ok else 0)
+            indicators.append(["全市场参与度 (^NYA)", status_code, f"SPX:{spx_trend_txt}\nNYA:{'强' if n_ok else '弱'}", "逻辑: SPX 强 (>50MA) 但 NYA 弱 (<50MA) = 风险触发"])
         except: indicators.append(["全市场参与度 (^NYA)", 0, "计算失败", "数据不足"])
 
         try:
@@ -891,21 +897,24 @@ class CrashWarningSystem:
             ratio_str = f"{margin_ratio:.1f}%" if margin_ratio else "N/A"
             line1 = f"{margin_amt:.3f}万亿, GDP%:{ratio_str}"
             line2 = f"YoY:{val_margin_yoy:+.1f}%" if val_margin_yoy is not None else "YoY: N/A"
-            st = 1 if is_high_risk else 0
-            indicators.append(["美股保证金债务 Margin Debt", st, f"{line1}\n{line2}", "标准: GDP比≥3.5% (预警)\n或 YoY > 50%"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 1 if is_high_risk else 0
+            indicators.append(["美股保证金债务 Margin Debt", status_code, f"{line1}\n{line2}", "标准: GDP比≥3.5% (预警)\n或 YoY > 50%"])
         else:
             indicators.append(["美股保证金债务 Margin Debt", 0, "数据抓取无效", "FINRA源无响应"])
 
         try:
             v = vix.iloc[-1]
             chg = (v/vix.iloc[-15]-1)*100
-            st = 2 if (v>25 or chg>40) else 0
-            indicators.append(["VIX 恐慌指数 (异动)", st, f"现值:{v:.1f}\n14天涨幅:{chg:.0f}%", "标准: 14天涨幅>40% (提早预警)\n或 绝对值>25 (高压区)"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if (v>25 or chg>40) else 0
+            indicators.append(["VIX 恐慌指数 (异动)", status_code, f"现值:{v:.1f}\n14天涨幅:{chg:.0f}%", "标准: 14天涨幅>40% (提早预警)\n或 绝对值>25 (高压区)"])
         except: indicators.append(["VIX 恐慌指数 (异动)", 0, "数据不足", ""])
 
         if ma50_pct is not None:
-            st = 2 if ma50_pct<40 else (1 if ma50_pct<60 else 0)
-            indicators.append(["市场广度 (>50MA & >20MA)", st, f">50MA: {ma50_pct:.1f}%\n>20MA: {ma20_pct:.1f}%", "50MA: <60%警 <40%险\n20MA: <50%警 <30%险"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if ma50_pct<40 else (1 if ma50_pct<60 else 0)
+            indicators.append(["市场广度 (>50MA & >20MA)", status_code, f">50MA: {ma50_pct:.1f}%\n>20MA: {ma20_pct:.1f}%", "50MA: <60%警 <40%险\n20MA: <50%警 <30%险"])
         else:
             indicators.append(["市场广度 (>50MA & >20MA)", 0, "计算失败", "成分股获取失败"])
 
@@ -973,11 +982,12 @@ class CrashWarningSystem:
             now = spx.iloc[-1] # 当前最新价格
             
             # 判断逻辑：只有价格跌破“下轨”才算真正跌破支撑带
-            status = 2 if now < band_lower else 0
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if now < band_lower else 0
             
             # 优化显示：展示支撑带的范围
             msg = f"现价:{now:.0f}\n区间:{band_lower:.0f}~{band_upper:.0f}"
-            indicators.append(["牛市支撑带 (20SMA/21EMA)", status, msg, "标准: 跌穿 20周SMA 与 21周EMA 构成的双线区间"])
+            indicators.append(["牛市支撑带 (20SMA/21EMA)", status_code, msg, "标准: 跌穿 20周SMA 与 21周EMA 构成的双线区间"])
             
         except Exception as e:
             # print(e) # 调试用
@@ -1009,22 +1019,25 @@ class CrashWarningSystem:
             indicators.append(["Sahm Rule (衰退规则)", 0, "获取失败", "FRED源无响应"])
 
         if lei_depth is not None:
-            st = 2 if lei_depth < -4.1 else 0
-            indicators.append(["LEI 领先指标 (3Ds)", st, f"Depth:{lei_depth:.1f}%\nDiffusion:{lei_diff}", "标准: Depth < -4.1% & Diffusion ≤50 (衰退触发)\n/ Depth <0 或 Diffusion <100 (预警)"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if lei_depth < -4.1 else 0
+            indicators.append(["LEI 领先指标 (3Ds)", status_code, f"Depth:{lei_depth:.1f}%\nDiffusion:{lei_diff}", "标准: Depth < -4.1% & Diffusion ≤50 (衰退触发)\n/ Depth <0 或 Diffusion <100 (预警)"])
         else:
             indicators.append(["LEI 领先指标 (3Ds)", 0, "抓取失败", "Firecrawl/AI 无结果"])
 
         if pcr_avg is not None:
-            st = 2 if pcr_avg < 0.8 else 0
-            indicators.append(["CBOE Put/Call Ratio", st, f"读数: {pcr_curr:.2f}\n(源:10日均值版)", "标准: < 0.8 (贪婪/短线高点)\n> 1.1 (恐慌/短线低点)"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            status_code = 2 if pcr_avg < 0.8 else 0
+            indicators.append(["CBOE Put/Call Ratio", status_code, f"读数: {pcr_curr:.2f}\n(源:10日均值版)", "标准: < 0.8 (贪婪/短线高点)\n> 1.1 (恐慌/短线低点)"])
         else:
             indicators.append(["CBOE Put/Call Ratio", 0, "抓取失败", "MacroMicro源无响应"])
 
         if val_nfci is not None:
-            if val_nfci > -0.2: st = 2
-            elif val_nfci > -0.35: st = 1
-            else: st = 0
-            indicators.append(["芝加哥金融状况指数 (NFCI)", st, f"读数:{val_nfci:.2f}", "标准: > -0.35 (预警)\n> -0.2 (触发)"])
+            # ### CHANGED HERE ###: 变量名 st -> status_code
+            if val_nfci > -0.2: status_code = 2
+            elif val_nfci > -0.35: status_code = 1
+            else: status_code = 0
+            indicators.append(["芝加哥金融状况指数 (NFCI)", status_code, f"读数:{val_nfci:.2f}", "标准: > -0.35 (预警)\n> -0.2 (触发)"])
         else:
             indicators.append(["芝加哥金融状况指数 (NFCI)", 0, "抓取失败", "源无响应"])
 
