@@ -1,5 +1,3 @@
---- START OF FILE A11.py ---
-
 # -*- coding: utf-8 -*-
 """
 美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (SMT补全修复)
@@ -1558,3 +1556,4 @@ if __name__ == "__main__":
             traceback.print_exc() 
         
         st.text("\n>>> 计算完成。按 Enter 键退出程序...") # ### CHANGED HERE ###
+
