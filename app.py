@@ -1,3 +1,5 @@
+--- START OF FILE A11.py ---
+
 # -*- coding: utf-8 -*-
 """
 美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (SMT补全修复)
@@ -69,16 +71,19 @@ client = genai.Client(api_key=GENAI_API_KEY)
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# 【UI 工具类 - 复刻控制台风格 -> 网页风格升级】
+# 【UI 工具类 - 网页视觉升级版】
 # ==========================================
-# ### CHANGED HERE ###: 全面升级为 Streamlit 原生组件，提升视觉体验
-def print_h(msg): st.markdown(f"### ━━━ {msg} ━━━") 
+# ### CHANGED HERE ###: 将纯文本输出升级为 Streamlit 原生组件，提升视觉体验
+def print_h(msg): 
+    st.divider()
+    st.markdown(f"### {msg}") 
 def print_step(msg): st.markdown(f"**🔹 {msg}**")
 def print_ok(msg): st.success(f"✅ {msg}") 
 def print_warn(msg): st.warning(f"⚠️ {msg}")
 def print_err(msg): st.error(f"❌ {msg}")
 def print_info(msg): st.info(f"ℹ️ {msg}")
-def log_text(msg): st.markdown(msg.replace("   ", "&nbsp;&nbsp;&nbsp;")) # 保留缩进格式
+# ### CHANGED HERE ###: 使用 markdown 并处理缩进，使排版更整洁
+def log_text(msg): st.markdown(msg.replace("   ", "&nbsp;&nbsp;&nbsp;").replace("\n", "  \n"))
 
 # ==========================================
 # 【WebScraper】
@@ -376,9 +381,9 @@ class CrashWarningSystem:
 
     def analyze_market_trends_console(self):
         # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
-        st.markdown("---") 
+        st.divider()
         st.subheader(f"🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
-        st.markdown("---") 
+        st.divider()
         
         try:
             fred = Fred(api_key=USER_FRED_KEY)
@@ -439,7 +444,7 @@ class CrashWarningSystem:
             nh_val = f"{val:.0f}"
             nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
         log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -478,7 +483,7 @@ class CrashWarningSystem:
                 pos_desc = "逼近52周新高" if dist_high > -2 else "区间震荡"
                 pos_str = f"距52周高: {dist_high:.1f}% | {pos_desc}"
                 print_h("【简单结论】标普500趋势")
-                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.markdown("---") # ### CHANGED HERE ###
+                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.divider() # ### CHANGED HERE ###
         except: return [], []
 
         print_h("启动宏观指标动态抓取 (Firecrawl)")
@@ -529,7 +534,7 @@ class CrashWarningSystem:
                 log_text(f"2. TRIN = {trin_val:.2f}")
                 
                 # --- 控制台深度输出 ---
-                st.markdown("---") # ### CHANGED HERE ###
+                st.divider() # ### CHANGED HERE ###
                 log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
                 log_text(f"   当前读数: {trin_val:.2f}")
                 
@@ -591,7 +596,7 @@ class CrashWarningSystem:
                     log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
                 log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
-                st.markdown("---") # ### CHANGED HERE ###
+                st.divider() # ### CHANGED HERE ###
 
             else: 
                 log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
@@ -863,7 +868,7 @@ class CrashWarningSystem:
             print_h("【简单结论】NYMO 广度")
             log_text(f"  当前读数: {real_nymo}")
             log_text(f"  区域判断: {nymo_desc}")
-            st.markdown("---") # ### CHANGED HERE ###
+            st.divider() # ### CHANGED HERE ###
         
         nymo_data = ["StockCharts 广度 ($NYMO)", nymo_stat, nymo_txt, "极值: <-60恐慌底 / >+60过热顶\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"]
         
@@ -989,9 +994,9 @@ class SectorRotationEngine:
 
     def run_analysis(self):
         # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
-        st.markdown("---") 
+        st.divider()
         st.subheader(f"🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
-        st.markdown("---") 
+        st.divider()
         
         try:
             tickers = list(self.sectors.keys())
@@ -1121,7 +1126,7 @@ class SectorRotationEngine:
                 log_text(f"   \U0001f525 {m['Name']}: 跑赢大盘 {m['Alpha_10d']:.2f}%") 
         else:
             log_text("   (近期无明显异动板块)")
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
 
     def _generate_summary_text(self, df, movers):
         leaders = df[df['Quadrant'] == "Leading (领涨)"]['Name'].tolist()
@@ -1137,9 +1142,9 @@ class SectorRotationEngine:
 # ==========================================
 def run_fred_traffic_light(fred_key):
     # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
-    st.markdown("---") 
+    st.divider()
     st.subheader("🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
-    st.markdown("---") 
+    st.divider()
     
     def get_valid_fred_data(series_id, count=1):
         url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={fred_key}&file_type=json&sort_order=desc&limit=10"
@@ -1178,7 +1183,7 @@ def run_fred_traffic_light(fred_key):
         log_text(f"数据源: St. Louis Fed (API Key已验证)")
         log_text(f"1. 10Y-2Y 利差 (T10Y2Y): {val_curve:+.2f}%  (日期: {date_curve})")
         log_text(f"2. 失业率 (UNRATE)     : {val_unrate}%  (日期: {date_unrate}) [前值: {prev_unrate}%]")
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
 
         signal = ""
         advice = ""
@@ -1203,7 +1208,7 @@ def run_fred_traffic_light(fred_key):
 
         log_text(f"\U0001f6a6 信号灯状态: {signal}") 
         log_text(f"\U0001f4a1 操作建议  : {advice}") 
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
 
     except Exception as e:
         print_err(f"FRED API 调用失败: {e}")
@@ -1237,12 +1242,12 @@ def run_fred_v10_dashboard(api_key):
     if curve_val > 0: yield_status = "\U0001f7e2 正向" 
     else: yield_status = "\U0001f534 倒挂" 
 
-    st.markdown("---") # ### CHANGED HERE ###
+    st.divider() # ### CHANGED HERE ###
     log_text(f"📊 宏观与市场快照 ({current_date_str})") 
-    st.markdown("---") # ### CHANGED HERE ###
+    st.divider() # ### CHANGED HERE ###
     log_text(f"1. 市场恐慌指数 VIX: {vix_val:.2f} ({vix_status})")
     log_text(f"2. 10Y-2Y 收益率差 : {curve_val:.2f}% ({yield_status})")
-    st.markdown("---") # ### CHANGED HERE ###
+    st.divider() # ### CHANGED HERE ###
 
 # ==========================================
 # 【NEW MODULE】SMT 背离分析引擎 (V3 Pro - 经典回归+深度解读)
@@ -1269,9 +1274,9 @@ class SMTDivergenceAnalyzer:
 
     def run(self):
         # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
-        st.markdown("---") 
+        st.divider()
         st.subheader(f"🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}") 
-        st.markdown("---") 
+        st.divider()
 
         # 1. 批量下载数据
         print_step("下载全量数据 (含期货/等权ETF)...")
@@ -1291,14 +1296,14 @@ class SMTDivergenceAnalyzer:
                 return
 
             print_ok("数据获取成功，开始计算...")
-            st.markdown("---") # ### CHANGED HERE ###
+            st.divider() # ### CHANGED HERE ###
 
             # 2. 经典 SMT (恢复老版样式)
             print_h("1. 经典 SMT 分析 (纳指/标普/QQQ/SPY)")
             for period in self.periods:
                 self._analyze_classic_style(df_close, period)
             
-            st.markdown("---") # ### CHANGED HERE ###
+            st.divider() # ### CHANGED HERE ###
             
             # 3. Pro SMT (增强信息量)
             print_h("2. 进阶 SMT 分析 (期货 & 市场广度)")
@@ -1306,7 +1311,7 @@ class SMTDivergenceAnalyzer:
             self._analyze_pro_futures(df_close, 10) # 10日是期货背离黄金窗口
             self._analyze_pro_breadth(df_close, 20) # 20日看广度最准
             
-            st.markdown("---") # ### CHANGED HERE ###
+            st.divider() # ### CHANGED HERE ###
 
             # 4. 关键位与入场
             self._analyze_entry_signals(df_close)
@@ -1509,14 +1514,14 @@ class SMTDivergenceAnalyzer:
         log_text(f"   信号强度: 多头({bull_score}) vs 空头({bear_score})")
 
     def _print_legend(self):
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
         log_text("【SMT Pro 策略说明书】")
         log_text("1. \U0001f525 期货先行: NQ/ES 期货包含夜盘，比ETF早 1-4 小时反应。")
         log_text("2. \u2696\ufe0f 内部广度: 若 SPY 涨但 RSP 跌 = 虚假繁荣 (看跌)。")
         log_text("3. \U0001f3af Vincent战法: SMT只是过滤器，必须配合“关键位”。")
         log_text("   - 买入公式: SMT看涨背离 + 价格回踩MA20不破。")
         log_text("   - 卖出公式: SMT看跌背离 + 价格假突破前高 (或跌破MA20)。")
-        st.markdown("---") # ### CHANGED HERE ###
+        st.divider() # ### CHANGED HERE ###
 
 
 if __name__ == "__main__":
@@ -1556,4 +1561,3 @@ if __name__ == "__main__":
             traceback.print_exc() 
         
         st.text("\n>>> 计算完成。按 Enter 键退出程序...") # ### CHANGED HERE ###
-
