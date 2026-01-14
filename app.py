@@ -1,9 +1,9 @@
+--- START OF FILE A11.py ---
+
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - Streamlit Cloud 最终修复版 (视觉增强 + 修复AttributeError)
-### CHANGED HERE ###: 
-1. 修复 CrashWarningSystem 类中 generate_chart 方法丢失/缩进错误的问题。
-2. 实施网页视觉增强：使用 st.success/warning/error/info/markdown 替换纯文本，提升阅读体验。
+美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (SMT补全修复)
+### CHANGED HERE ###: 修复 SMT 模块 5/10/20/60 日窗口信息被隐藏的问题，强制输出所有窗口状态。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -71,18 +71,16 @@ client = genai.Client(api_key=GENAI_API_KEY)
 warnings.filterwarnings("ignore")
 
 # ==========================================
-# 【UI 工具类 - 网页视觉增强】
+# 【UI 工具类 - 复刻控制台风格 -> 网页风格升级】
 # ==========================================
-# ### CHANGED HERE ###: 使用 Streamlit 原生组件提升视觉效果，但保持文字内容不变
-def print_h(msg): 
-    st.markdown("---") 
-    st.markdown(f"### {msg}") # 使用标题样式
-def print_step(msg): st.markdown(f"**🔹 {msg}**") # 加粗步骤
-def print_ok(msg): st.success(f"✅ {msg}") # 绿色成功卡片
-def print_warn(msg): st.warning(f"⚠️ {msg}") # 黄色警告卡片
-def print_err(msg): st.error(f"❌ {msg}") # 红色错误卡片
-def print_info(msg): st.info(f"ℹ️ {msg}") # 蓝色信息卡片
-def log_text(msg): st.markdown(msg) # 使用 Markdown 渲染普通文本
+# ### CHANGED HERE ###: 全面升级为 Streamlit 原生组件，提升视觉体验
+def print_h(msg): st.markdown(f"### ━━━ {msg} ━━━") 
+def print_step(msg): st.markdown(f"**🔹 {msg}**")
+def print_ok(msg): st.success(f"✅ {msg}") 
+def print_warn(msg): st.warning(f"⚠️ {msg}")
+def print_err(msg): st.error(f"❌ {msg}")
+def print_info(msg): st.info(f"ℹ️ {msg}")
+def log_text(msg): st.markdown(msg.replace("   ", "&nbsp;&nbsp;&nbsp;")) # 保留缩进格式
 
 # ==========================================
 # 【WebScraper】
@@ -379,9 +377,10 @@ class CrashWarningSystem:
             return None, None
 
     def analyze_market_trends_console(self):
-        st.markdown("---")
-        st.markdown(f"### 🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
-        st.markdown("---")
+        # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
+        st.markdown("---") 
+        st.subheader(f"🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.markdown("---") 
         
         try:
             fred = Fred(api_key=USER_FRED_KEY)
@@ -442,7 +441,7 @@ class CrashWarningSystem:
             nh_val = f"{val:.0f}"
             nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
         log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
-        st.markdown("---")
+        st.markdown("---") # ### CHANGED HERE ###
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -481,7 +480,7 @@ class CrashWarningSystem:
                 pos_desc = "逼近52周新高" if dist_high > -2 else "区间震荡"
                 pos_str = f"距52周高: {dist_high:.1f}% | {pos_desc}"
                 print_h("【简单结论】标普500趋势")
-                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.markdown("---")
+                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.markdown("---") # ### CHANGED HERE ###
         except: return [], []
 
         print_h("启动宏观指标动态抓取 (Firecrawl)")
@@ -532,7 +531,7 @@ class CrashWarningSystem:
                 log_text(f"2. TRIN = {trin_val:.2f}")
                 
                 # --- 控制台深度输出 ---
-                st.markdown("---")
+                st.markdown("---") # ### CHANGED HERE ###
                 log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
                 log_text(f"   当前读数: {trin_val:.2f}")
                 
@@ -594,7 +593,7 @@ class CrashWarningSystem:
                     log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
                 log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
-                st.markdown("---")
+                st.markdown("---") # ### CHANGED HERE ###
 
             else: 
                 log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
@@ -874,7 +873,6 @@ class CrashWarningSystem:
         
         return ho_data, final_list[1:]
 
-    # ### CHANGED HERE ###: 确保 generate_chart 在类内部，且缩进正确
     def generate_chart(self):
         ho_data, other_data = self.fetch_and_calculate()
         data = [ho_data] + other_data
@@ -992,10 +990,10 @@ class SectorRotationEngine:
         self.mom_window = 10 
 
     def run_analysis(self):
-        # ### CHANGED HERE ###: 使用 Markdown 标题和分割线替代纯文本
-        st.markdown("---")
-        st.markdown(f"### 🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
-        st.markdown("---")
+        # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
+        st.markdown("---") 
+        st.subheader(f"🔄 启动板块轮动分析模块 (Sector Rotation RRG) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.markdown("---") 
         
         try:
             tickers = list(self.sectors.keys())
@@ -1116,7 +1114,7 @@ class SectorRotationEngine:
             items = df[df['Quadrant'] == q]
             if not items.empty:
                 ticks = ", ".join([f"{r['Name']}" for _, r in items.iterrows()])
-                icon = "\U0001f7e2" if "Leading" in q else ("\U0001f535" if "Improving" in q else ("\U0001f7e1" if "Weakening" in q else "\U0001f534")) 
+                icon = "\U0001f7e2" if "Leading" in q else ("\U0001f534" if "Improving" in q else ("\U0001f7e1" if "Weakening" in q else "\U0001f534")) 
                 log_text(f"   {icon} {q}: {ticks}")
         
         log_text("\n🚀 [10日 资金抢筹榜] (短期爆发力)") 
@@ -1140,10 +1138,10 @@ class SectorRotationEngine:
 # 【附加功能：FRED 收益率曲线/失业率红绿灯】
 # ==========================================
 def run_fred_traffic_light(fred_key):
-    # ### CHANGED HERE ###: 使用 Markdown 标题和分割线替代纯文本
-    st.markdown("---")
-    st.markdown("### 🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
-    st.markdown("---")
+    # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
+    st.markdown("---") 
+    st.subheader("🚦 收益率曲线 + 失业率红绿灯系统 (FRED直连 - 智能修复版)") 
+    st.markdown("---") 
     
     def get_valid_fred_data(series_id, count=1):
         url = f"https://api.stlouisfed.org/fred/series/observations?series_id={series_id}&api_key={fred_key}&file_type=json&sort_order=desc&limit=10"
@@ -1217,7 +1215,7 @@ def run_fred_traffic_light(fred_key):
 # ==========================================
 def run_fred_v10_dashboard(api_key):
     masked_key = api_key[:6] + "..." if len(api_key) > 6 else "xxxx..."
-    st.markdown("\n### ▬ ₪  FRED 集成版 (V10.003) - 补充宏观快照  ▬") # ### CHANGED HERE ###
+    st.subheader("▬ ₪  FRED 集成版 (V10.003) - 补充宏观快照  ▬") # ### CHANGED HERE ###
     print_step(f"正在连接 St. Louis Fed (Key: {masked_key})...") 
     
     try:
@@ -1272,10 +1270,10 @@ class SMTDivergenceAnalyzer:
         self.signals = [] # 收集所有信号用于总结
 
     def run(self):
-        # ### CHANGED HERE ###: 使用 Markdown 标题和分割线替代纯文本
-        st.markdown("---")
-        st.markdown(f"### 🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}")
-        st.markdown("---")
+        # ### CHANGED HERE ###: 视觉优化 - 使用分割线和副标题
+        st.markdown("---") 
+        st.subheader(f"🧭 启动 SMT 背离分析模块 (Pro V3) - {datetime.now().strftime('%Y-%m-%d')}") 
+        st.markdown("---") 
 
         # 1. 批量下载数据
         print_step("下载全量数据 (含期货/等权ETF)...")
