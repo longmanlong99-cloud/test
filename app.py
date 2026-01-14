@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - Streamlit Cloud 网页视觉增强版 (基于 A11.py)
-### CHANGED HERE ###: 保持内容100%一致，但使用 Streamlit 原生 UI 组件(卡片/Markdown)替换纯文本，提升可读性。
+美股崩盘预警系统 - Streamlit Cloud 最终修复版 (视觉增强 + 修复AttributeError)
+### CHANGED HERE ###: 
+1. 修复 CrashWarningSystem 类中 generate_chart 方法丢失/缩进错误的问题。
+2. 实施网页视觉增强：使用 st.success/warning/error/info/markdown 替换纯文本，提升阅读体验。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -47,11 +49,11 @@ load_fonts()
 
 # --- 库检查 ---
 try: from fredapi import Fred
-except ImportError: st.warning(">>> 提示：未找到 fredapi 库") # ### CHANGED HERE ###: 使用 warning 组件
+except ImportError: st.warning(">>> 提示：未找到 fredapi 库")
 
 try: from google import genai
 except ImportError: 
-    st.error(">>> 严重错误：未找到 google-genai 库。") # ### CHANGED HERE ###: 使用 error 组件
+    st.error(">>> 严重错误：未找到 google-genai 库。")
     st.stop()
 
 # ==========================================
@@ -62,7 +64,7 @@ try:
     USER_FRED_KEY = st.secrets["FRED_KEY"]
     FIRECRAWL_KEY = st.secrets["FIRECRAWL_KEY"]
 except Exception as e:
-    st.error(f"缺少密钥配置! 请在 Streamlit Secrets 中配置: {e}") # ### CHANGED HERE ###
+    st.error(f"缺少密钥配置! 请在 Streamlit Secrets 中配置: {e}")
     st.stop()
 
 client = genai.Client(api_key=GENAI_API_KEY)
@@ -71,15 +73,15 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # 【UI 工具类 - 网页视觉增强】
 # ==========================================
-# ### CHANGED HERE ###: 使用 Markdown 和原生组件替代 st.text，提升视觉体验
+# ### CHANGED HERE ###: 使用 Streamlit 原生组件提升视觉效果，但保持文字内容不变
 def print_h(msg): 
-    st.markdown("---") # 添加分割线
-    st.markdown(f"### {msg}") # 使用三级标题，字体更大更清晰
-def print_step(msg): st.markdown(f"**{msg}**") # 加粗显示步骤
-def print_ok(msg): st.success(msg) # 绿色成功卡片
-def print_warn(msg): st.warning(msg) # 黄色警告卡片
-def print_err(msg): st.error(msg) # 红色错误卡片
-def print_info(msg): st.info(msg) # 蓝色信息卡片
+    st.markdown("---") 
+    st.markdown(f"### {msg}") # 使用标题样式
+def print_step(msg): st.markdown(f"**🔹 {msg}**") # 加粗步骤
+def print_ok(msg): st.success(f"✅ {msg}") # 绿色成功卡片
+def print_warn(msg): st.warning(f"⚠️ {msg}") # 黄色警告卡片
+def print_err(msg): st.error(f"❌ {msg}") # 红色错误卡片
+def print_info(msg): st.info(f"ℹ️ {msg}") # 蓝色信息卡片
 def log_text(msg): st.markdown(msg) # 使用 Markdown 渲染普通文本
 
 # ==========================================
@@ -377,7 +379,6 @@ class CrashWarningSystem:
             return None, None
 
     def analyze_market_trends_console(self):
-        # ### CHANGED HERE ###: 使用 Markdown 标题和分割线替代纯文本
         st.markdown("---")
         st.markdown(f"### 🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
         st.markdown("---")
@@ -441,7 +442,7 @@ class CrashWarningSystem:
             nh_val = f"{val:.0f}"
             nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
         log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
-        st.markdown("---") # ### CHANGED HERE ###
+        st.markdown("---")
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -531,7 +532,7 @@ class CrashWarningSystem:
                 log_text(f"2. TRIN = {trin_val:.2f}")
                 
                 # --- 控制台深度输出 ---
-                st.markdown("---") # ### CHANGED HERE ###
+                st.markdown("---")
                 log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
                 log_text(f"   当前读数: {trin_val:.2f}")
                 
@@ -593,7 +594,7 @@ class CrashWarningSystem:
                     log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
                 log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
-                st.markdown("---") # ### CHANGED HERE ###
+                st.markdown("---")
 
             else: 
                 log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
@@ -872,6 +873,109 @@ class CrashWarningSystem:
         final_list = [ho_data, nymo_data] + rest + [new_net, new_trin, new_vol, new_tv]
         
         return ho_data, final_list[1:]
+
+    # ### CHANGED HERE ###: 确保 generate_chart 在类内部，且缩进正确
+    def generate_chart(self):
+        ho_data, other_data = self.fetch_and_calculate()
+        data = [ho_data] + other_data
+        if not ho_data and not other_data: return
+
+        risk_score = sum(1 for d in data if d and d[1] == 2) + sum(0.5 for d in data if d and d[1] == 1)
+        
+        fig = plt.figure(figsize=(33.06, 46.0), facecolor=self.colors['bg'])
+        ax = fig.add_subplot(111)
+        ax.axis('off')
+
+        ax.text(0.5, 0.96, "美股崩盘预警系统 - 21因子 V10.049 (Bull Support Band Fix)", ha='center', va='center', fontsize=38, fontweight='bold', color=self.colors['title'])
+        ax.text(0.5, 0.935, f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')} ", ha='center', va='center', fontsize=18, color='#CCCCCC')
+
+        table_data = []
+        if ho_data:
+            _, h_st, h_ctx, h_log = ho_data
+            st_txt = "【√】安全" if h_st == 0 else ("【!】触发" if h_st == 2 else "【!】预警")
+            if "失败" in str(h_ctx) or "无效" in str(h_ctx): st_txt = "【?】缺失"
+            
+            c3 = h_ctx.split('\n')
+            c4 = h_log.split('\n')
+            
+            val_row1 = '\n'.join(c3[:2]) if len(c3)>=2 else h_ctx
+            log_row1 = '\n'.join(c4[:2])
+            table_data.append([ho_data[0], st_txt, val_row1, log_row1])
+            
+            val_row2 = '\n'.join(c3[2:]) if len(c3)>2 else ""
+            log_row2 = '\n'.join(c4[2:])
+            table_data.append(['', st_txt, val_row2, log_row2])
+        
+        for d in other_data:
+            st_txt = "【√】安全"
+            if d[1] == 2: st_txt = "【!】触发"
+            elif d[1] == 1: st_txt = "【!】预警"
+            if "失败" in str(d[2]) or "缺失" in str(d[2]) or "不足" in str(d[2]): st_txt = "【?】缺失"
+            table_data.append([d[0], st_txt, d[2], d[3]])
+        
+        table = ax.table(cellText=table_data, colLabels=['监测指标 (21因子)', '状态评级', '当前读数 (提供上下文)', '判断逻辑 (清晰标准)'], cellLoc='center', loc='center', colWidths=[0.25, 0.12, 0.25, 0.38]) 
+        
+        table.scale(1, 6.75) 
+        table.auto_set_font_size(False); table.set_fontsize(23)
+
+        # --- [UI 优化: 动态行距调整] ---
+        # 寻找 RSI 所在的行号
+        target_row_idx = -1
+        for i, row_cont in enumerate(table_data):
+            if row_cont and "RSI" in str(row_cont[0]):
+                target_row_idx = i + 1 # +1 是因为 header 占了第 0 行
+                break
+        
+        # 默认兜底 (如果没有找到 RSI，还是针对原定行)
+        if target_row_idx == -1: target_row_idx = 12 
+
+        # 扩大约 35% 以容纳 3 行文字
+        target_height_factor = 1.35 
+        
+        std_height = table[0, 0].get_height()
+        extra_h = std_height * (target_height_factor - 1.0)
+
+        for (row, col), cell in table.get_celld().items():
+            cell.set_edgecolor(self.colors['edge']); cell.set_linewidth(1.5)
+            
+            if row == target_row_idx:
+                cell.set_height(std_height * target_height_factor)
+            elif row > target_row_idx:
+                current_y = cell.get_y()
+                # 向下顺延 (y坐标减小)
+                cell.set_y(current_y - extra_h)
+
+            if row in [1, 2]: cell.set_edgecolor(self.colors['edge']) 
+
+            if row == 0:
+                cell.set_facecolor(self.colors['table_header']); cell.set_text_props(weight='bold', color='#FFFFFF')
+            else:
+                if row <= 2: idx = 0 
+                elif row == 3: idx = 1 
+                else: idx = row - 2 
+                
+                if idx >= len(data): continue
+                lvl = data[idx][1]
+                
+                bg, c_txt = self.colors['row_safe'], self.colors['text_safe']
+                val_txt = str(data[idx][2])
+                if "失败" in val_txt or "缺失" in val_txt: bg = '#555555' 
+                elif lvl == 2: bg, c_txt = self.colors['row_warn'], self.colors['text_warn']
+                elif lvl == 1: bg, c_txt = self.colors['row_risk'], self.colors['text_risk']
+                
+                cell.set_facecolor(bg)
+                cell.set_text_props(color=c_txt, weight='bold')
+                if row == 2 and (col == 0 or col == 1): cell.set_text_props(color=bg)
+
+        if risk_score <= 5: msg, clr = f"风险评分 {risk_score:.1f}/21.0 - 市场结构大致健康，可保持观察", self.colors['text_safe']
+        elif risk_score <= 10: msg, clr = f"风险评分 {risk_score:.1f}/21.0 - 内部背离，中期风险累积，建议谨慎", self.colors['text_risk']
+        else: msg, clr = f"严重警告：风险评分 {risk_score:.1f}/21.0 - 崩盘信号共振，建议立即减仓", self.colors['text_warn']
+        
+        ax.text(0.5, 0.05, msg, ha='center', va='center', fontsize=34, fontweight='bold', color=clr)
+
+        # ### CHANGED HERE ###: Streamlit 直接显示图片，不保存文件
+        st.pyplot(fig)
+        print_ok(f"报表已生成: (网页显示)") # ### CHANGED HERE ###
 
 # ==============================================================================
 # 模块：板块轮动引擎 (Fix: 白底 + 汉字乱码修复 + 大白话坐标 + 10日爆发)
