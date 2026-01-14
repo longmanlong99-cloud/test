@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版
-### CHANGED HERE ###: 严格复刻 output.txt 的文本输出格式 (ASCII 分割线、纯文本风格)
+美股崩盘预警系统 - Streamlit Cloud 100% 控制台复刻版 (SMT补全修复)
+### CHANGED HERE ###: 修复 SMT 模块 5/10/20/60 日窗口信息被隐藏的问题，强制输出所有窗口状态。
 """
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -71,10 +71,9 @@ warnings.filterwarnings("ignore")
 # ==========================================
 # 【UI 工具类 - 复刻控制台风格】
 # ==========================================
-# ### CHANGED HERE ###: 修改 print_h 为纯文本风格，匹配 output.txt 的 ━━━ 
 def print_h(msg): st.text(f"\n━━━ {msg} ━━━") 
 def print_step(msg): st.text(f"🔹 {msg}")
-def print_ok(msg): st.text(f"✅ {msg}") # ### CHANGED HERE ###: 去掉绿色背景，保持控制台纯文本感
+def print_ok(msg): st.text(f"✅ {msg}") 
 def print_warn(msg): st.text(f"⚠️ {msg}")
 def print_err(msg): st.text(f"❌ {msg}")
 def print_info(msg): st.text(f"ℹ️ {msg}")
@@ -375,7 +374,6 @@ class CrashWarningSystem:
             return None, None
 
     def analyze_market_trends_console(self):
-        # ### CHANGED HERE ###: 100% 复刻 output.txt 的 Deep Macro 头部
         st.text("\n===========================================================================")
         st.text(f" 🏦 启动深度宏观预警模块 (Deep Macro) - {datetime.now().strftime('%Y-%m-%d')}") 
         st.text("===========================================================================")
@@ -439,7 +437,7 @@ class CrashWarningSystem:
             nh_val = f"{val:.0f}"
             nh_signal = "\U0001f7e2 多头主导" if val > 0 else "\U0001f534 空头主导" 
         log_text(f"4. WSJ 净新高 (Net Highs): {nh_val}  [{nh_signal}]")
-        st.text("===========================================================================") # ### CHANGED HERE ###
+        st.text("===========================================================================")
 
     def fetch_and_calculate(self):
         print_h("开始执行数据获取与计算")
@@ -478,7 +476,7 @@ class CrashWarningSystem:
                 pos_desc = "逼近52周新高" if dist_high > -2 else "区间震荡"
                 pos_str = f"距52周高: {dist_high:.1f}% | {pos_desc}"
                 print_h("【简单结论】标普500趋势")
-                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); log_text("-" * 30)
+                log_text(f"  当前价格: {curr_px:.2f}"); log_text(f"  趋势定性: {trend_desc}"); st.text("------------------------------")
         except: return [], []
 
         print_h("启动宏观指标动态抓取 (Firecrawl)")
@@ -489,6 +487,7 @@ class CrashWarningSystem:
         val_margin_yoy, margin_amt, margin_ratio = self.scraper.fetch_margin_debt()
         lei_depth, lei_diff = self.scraper.fetch_lei()
         pcr_avg, pcr_curr = self.scraper.fetch_pcr_robust()
+        print_h("芝加哥金融状况指数 (NFCI)")
         val_nfci = self.scraper.fetch_nfci() 
         
 
@@ -528,7 +527,7 @@ class CrashWarningSystem:
                 log_text(f"2. TRIN = {trin_val:.2f}")
                 
                 # --- 控制台深度输出 ---
-                st.text("\n----------------------------------------") # ### CHANGED HERE ###
+                st.text("\n----------------------------------------")
                 log_text(f"【TRIN 指标深度分析】(基于 PDF 实战标准)")
                 log_text(f"   当前读数: {trin_val:.2f}")
                 
@@ -590,7 +589,7 @@ class CrashWarningSystem:
                     log_text(f"   \U0001f4b0 [机会] TRIN > 2.0: 无论大盘多恐慌，均为短期【见底】信号！")
                 
                 log_text(f"   口诀: 低于0.5要当心(见顶)，高于2.0要激动(抄底)！")
-                st.text("----------------------------------------") # ### CHANGED HERE ###
+                st.text("----------------------------------------")
 
             else: 
                 log_text("2. TRIN: 数据不足 (Adv/Dec/Vol 缺失)")
@@ -862,7 +861,7 @@ class CrashWarningSystem:
             print_h("【简单结论】NYMO 广度")
             log_text(f"  当前读数: {real_nymo}")
             log_text(f"  区域判断: {nymo_desc}")
-            log_text("-" * 30)
+            st.text("------------------------------")
         
         nymo_data = ["StockCharts 广度 ($NYMO)", nymo_stat, nymo_txt, "极值: <-60恐慌底 / >+60过热顶\n趋势: 0轴上方看多 / 下方看空\n预警: 股价创新高但NYMO未跟(背离)"]
         
@@ -1338,9 +1337,8 @@ class SMTDivergenceAnalyzer:
             if current_prices[t] >= period_highs[t] * 0.9995: made_new_high.append(t)
             if current_prices[t] <= period_lows[t] * 1.0005: made_new_low.append(t)
             
-        # 只打印有信号的窗口，避免刷屏
-        if not made_new_high and not made_new_low:
-            return 
+        # ### CHANGED HERE ###: 移除 "if not made_new_high and not made_new_low: return" 
+        # 强制输出窗口标题，确保 5, 10, 20, 60 日信息不丢失
 
         log_text(f"[{period}日窗口]")
         
@@ -1368,6 +1366,9 @@ class SMTDivergenceAnalyzer:
         elif len(made_new_low) == len(target_tickers):
             log_text(f"   \U0001f9ca 状态: 强空头共振 (全部创新低)") 
             self.signals.append(-0.5)
+        else:
+            # ### CHANGED HERE ###: 增加兜底输出，确保无信号时也显示状态
+            log_text(f"   ⚪ 状态: 无新高/新低 (区间震荡)")
 
     # --- 风格2：Pro 期货分析 (信息更充分) ---
     def _analyze_pro_futures(self, df, period):
